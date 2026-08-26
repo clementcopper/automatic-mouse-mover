@@ -2,59 +2,113 @@ package mousemover
 
 import (
 	"os"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
-
-	"github.com/prashantgupta24/activity-tracker/pkg/activity"
-	"github.com/prashantgupta24/activity-tracker/pkg/tracker"
 )
+
+//fakePlatform stands in for internal/mac so the tests never touch cgo, the real cursor
+//or a real dialog.
+type fakePlatform struct {
+	mutex sync.Mutex
+
+	idleSeconds float64
+	//canMove false simulates a missing Accessibility permission: the position never
+	//changes, which is exactly how macOS behaves when it drops the event.
+	canMove bool
+
+	x, y       int
+	moveCount  int
+	alertCount int
+}
+
+func (f *fakePlatform) IdleSeconds() float64 {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	return f.idleSeconds
+}
+
+func (f *fakePlatform) MousePos() (int, int) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	return f.x, f.y
+}
+
+func (f *fakePlatform) MoveMouse(x, y int) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	f.moveCount++
+	if f.canMove {
+		f.x, f.y = x, y
+	}
+}
+
+func (f *fakePlatform) Alert(title, msg string) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	f.alertCount++
+}
+
+func (f *fakePlatform) counts() (moves, alerts int) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	return f.moveCount, f.alertCount
+}
 
 type TestMover struct {
 	suite.Suite
-	activityTracker *tracker.Instance
-	heartbeatCh     chan *tracker.Heartbeat
+	tickCh chan time.Time
+	fake   *fakePlatform
 }
 
 func TestSuite(t *testing.T) {
 	suite.Run(t, new(TestMover))
 }
 
-// Run once before all tests
-func (suite *TestMover) SetupSuite() {
-	heartbeatInterval := 60
-	workerInterval := 10
-
-	suite.activityTracker = &tracker.Instance{
-		HeartbeatInterval: heartbeatInterval,
-		WorkerInterval:    workerInterval,
-	}
-
-	suite.heartbeatCh = make(chan *tracker.Heartbeat)
-}
-
 // Run once before each test
 func (suite *TestMover) SetupTest() {
 	instance = nil
+	suite.tickCh = make(chan time.Time)
+	suite.fake = &fakePlatform{canMove: true}
 }
+
+//newMover returns a started mover wired to the fake platform.
+func (suite *TestMover) newMover(idleSeconds float64, canMove bool) *MouseMover {
+	suite.fake.idleSeconds = idleSeconds
+	suite.fake.canMove = canMove
+
+	mouseMover := GetInstance()
+	mouseMover.platform = suite.fake
+	mouseMover.state = &state{}
+	mouseMover.quit = make(chan struct{})
+	mouseMover.run(suite.tickCh, func() {})
+	time.Sleep(time.Millisecond * 100) //wait for the loop to start
+
+	return mouseMover
+}
+
+//tick drives n iterations of the loop and waits for them to be processed.
+func (suite *TestMover) tick(n int) {
+	for i := 0; i < n; i++ {
+		suite.tickCh <- time.Now()
+	}
+	time.Sleep(time.Millisecond * 100)
+}
+
 func (suite *TestMover) TestAppStart() {
 	t := suite.T()
-	mouseMover := GetInstance()
-	mouseMover.run(suite.heartbeatCh, suite.activityTracker)
-	time.Sleep(time.Millisecond * 500) //wait for app to start
+	mouseMover := suite.newMover(idleThreshold.Seconds()+1, true)
 	assert.True(t, mouseMover.state.isRunning(), "app should have started")
 }
+
 func (suite *TestMover) TestSingleton() {
 	t := suite.T()
-
-	mouseMover1 := GetInstance()
-	mouseMover1.run(suite.heartbeatCh, suite.activityTracker)
-
-	time.Sleep(time.Millisecond * 500)
-
+	mouseMover1 := suite.newMover(idleThreshold.Seconds()+1, true)
 	mouseMover2 := GetInstance()
+	assert.Same(t, mouseMover1, mouseMover2, "should be the same instance")
 	assert.True(t, mouseMover2.state.isRunning(), "instance should have started")
 }
 
@@ -67,113 +121,83 @@ func (suite *TestMover) TestLogFile() {
 
 	filePath := logDir + "/" + logFileName
 	assert.FileExists(t, filePath, "log file should exist")
-	os.RemoveAll(filePath)
+	os.RemoveAll(logDir)
 }
-func (suite *TestMover) TestSystemSleepAndWake() {
+
+//TestActivityLeavesCursorAlone is the core promise of the app: while the user is at the
+//machine, AMM must not touch the cursor.
+func (suite *TestMover) TestActivityLeavesCursorAlone() {
 	t := suite.T()
-	mouseMover := GetInstance()
+	mouseMover := suite.newMover(idleThreshold.Seconds()-1, true)
 
-	state := &state{
-		override: &override{
-			valueToReturn: true,
-		},
-	}
-	mouseMover.state = state
-	heartbeatCh := make(chan *tracker.Heartbeat)
+	suite.tick(3)
 
-	mouseMover.run(heartbeatCh, suite.activityTracker)
-	time.Sleep(time.Millisecond * 500) //wait for app to start
-	assert.True(t, mouseMover.state.isRunning(), "instance should have started")
-	assert.False(t, mouseMover.state.isSystemSleeping(), "machine should not be sleeping")
-
-	//fake a machine-sleep activity
-	machineSleepActivityMap := make(map[activity.Type][]time.Time)
-	var sleepTimeArray []time.Time
-	sleepTimeArray = append(sleepTimeArray, time.Now())
-	machineSleepActivityMap[activity.MachineSleep] = sleepTimeArray
-	heartbeatCh <- &tracker.Heartbeat{
-		WasAnyActivity: true,
-		ActivityMap:    machineSleepActivityMap,
-	}
-	time.Sleep(time.Millisecond * 500) //wait for it to be registered
-	assert.True(t, mouseMover.state.isSystemSleeping(), "machine should be sleeping now")
-
-	//assert app is sleeping
-	heartbeatCh <- &tracker.Heartbeat{
-		WasAnyActivity: false,
-	}
-
-	time.Sleep(time.Millisecond * 500) //wait for it to be registered
-	assert.True(t, time.Time.IsZero(state.getLastMouseMovedTime()), "should be default but is ", state.getLastMouseMovedTime())
-	assert.Equal(t, state.getDidNotMoveCount(), 0, "should be 0")
-
-	//fake a machine-wake activity
-	machineWakeActivityMap := make(map[activity.Type][]time.Time)
-	var wakeTimeArray []time.Time
-	wakeTimeArray = append(wakeTimeArray, time.Now())
-	machineWakeActivityMap[activity.MachineWake] = wakeTimeArray
-	heartbeatCh <- &tracker.Heartbeat{
-		WasAnyActivity: true,
-		ActivityMap:    machineWakeActivityMap,
-	}
-
-	time.Sleep(time.Millisecond * 500) //wait for it to be registered
-	assert.False(t, mouseMover.state.isSystemSleeping(), "machine should be awake now")
+	moves, _ := suite.fake.counts()
+	assert.Equal(t, 0, moves, "should not move while the user is active")
+	assert.True(t, mouseMover.state.getLastMouseMovedTime().IsZero(), "should be default")
 }
 
 func (suite *TestMover) TestMouseMoveSuccess() {
 	t := suite.T()
-	mouseMover := GetInstance()
+	mouseMover := suite.newMover(idleThreshold.Seconds()+1, true)
 
-	state := &state{
-		override: &override{
-			valueToReturn: true,
-		},
-	}
-	mouseMover.state = state
-	heartbeatCh := make(chan *tracker.Heartbeat)
+	suite.tick(1)
 
-	mouseMover.run(heartbeatCh, suite.activityTracker)
-	time.Sleep(time.Millisecond * 500) //wait for app to start
-	assert.True(t, state.isRunning(), "instance should have started")
-	assert.False(t, state.isSystemSleeping(), "machine should not be sleeping")
-	assert.True(t, time.Time.IsZero(state.getLastMouseMovedTime()), "should be default")
-	assert.Equal(t, state.getDidNotMoveCount(), 0, "should be 0")
+	moves, _ := suite.fake.counts()
+	assert.Equal(t, 1, moves, "should have moved once")
+	assert.False(t, mouseMover.state.getLastMouseMovedTime().IsZero(), "move time should be set")
+	assert.Equal(t, 0, mouseMover.state.getDidNotMoveCount(), "should be 0")
+}
 
-	heartbeatCh <- &tracker.Heartbeat{
-		WasAnyActivity: false,
-	}
+//TestMoveDirectionAlternates guards the sign flip that keeps the cursor oscillating
+//instead of drifting off screen.
+func (suite *TestMover) TestMoveDirectionAlternates() {
+	t := suite.T()
+	suite.newMover(idleThreshold.Seconds()+1, true)
 
-	time.Sleep(time.Millisecond * 500) //wait for it to be registered
-	assert.False(t, time.Time.IsZero(state.getLastMouseMovedTime()), "should be default but is ", state.getLastMouseMovedTime())
+	suite.tick(1)
+	x1, y1 := suite.fake.MousePos()
+	suite.tick(1)
+	x2, y2 := suite.fake.MousePos()
+
+	assert.NotEqual(t, 0, x1, "first move should go somewhere")
+	assert.Equal(t, 0, x2, "second move should come back to the start")
+	assert.Equal(t, 0, y2, "second move should come back to the start")
+	assert.NotEqual(t, x1, x2, "direction should have flipped")
+	assert.NotEqual(t, y1, y2, "direction should have flipped")
 }
 
 func (suite *TestMover) TestMouseMoveFailure() {
 	t := suite.T()
-	mouseMover := GetInstance()
+	mouseMover := suite.newMover(idleThreshold.Seconds()+1, false)
 
-	state := &state{
-		override: &override{
-			valueToReturn: false,
-		},
-	}
-	mouseMover.state = state
-	heartbeatCh := make(chan *tracker.Heartbeat)
+	suite.tick(1)
 
-	mouseMover.run(heartbeatCh, suite.activityTracker)
-	time.Sleep(time.Millisecond * 500) //wait for app to start
-	assert.True(t, state.isRunning(), "instance should have started")
-	assert.False(t, state.isSystemSleeping(), "machine should not be sleeping")
-	assert.True(t, time.Time.IsZero(state.getLastMouseMovedTime()), "should be default")
-	assert.Equal(t, state.getDidNotMoveCount(), 0, "should be 0")
-	assert.True(t, state.getLastErrorTime().IsZero(), "should be default")
+	assert.True(t, mouseMover.state.getLastMouseMovedTime().IsZero(), "should stay default")
+	assert.Equal(t, 1, mouseMover.state.getDidNotMoveCount(), "should have counted a failure")
+	assert.False(t, mouseMover.state.getLastErrorTime().IsZero(), "error time should be set")
+}
 
-	heartbeatCh <- &tracker.Heartbeat{
-		WasAnyActivity: false,
-	}
+//TestAlertThrottle guards the 24-hour alert window. It used to compare against
+//lastErrorTime, which was set to time.Now() a few lines above the check, so the
+//condition was never true and the accessibility alert never showed.
+func (suite *TestMover) TestAlertThrottle() {
+	t := suite.T()
+	mouseMover := suite.newMover(idleThreshold.Seconds()+1, false)
+	assert.True(t, mouseMover.state.getLastAlertTime().IsZero(), "should be default")
 
-	time.Sleep(time.Millisecond * 500) //wait for it to be registered
-	assert.True(t, time.Time.IsZero(state.getLastMouseMovedTime()), "should be default but is ", state.getLastMouseMovedTime())
-	assert.NotEqual(t, state.getDidNotMoveCount(), 0, "should not be 0")
-	assert.NotEqual(t, state.getLastErrorTime(), 0, "should not be 0")
+	suite.tick(failuresBeforeAlert)
+
+	_, alerts := suite.fake.counts()
+	assert.Equal(t, failuresBeforeAlert, mouseMover.state.getDidNotMoveCount(), "all moves should have failed")
+	assert.Equal(t, 1, alerts, "alert should have fired at the threshold")
+	assert.False(t, mouseMover.state.getLastAlertTime().IsZero(), "alert time should be set")
+
+	//a second batch within the 24 hour window must not re-arm the alert
+	firstAlertTime := mouseMover.state.getLastAlertTime()
+	suite.tick(failuresBeforeAlert)
+
+	_, alerts = suite.fake.counts()
+	assert.Equal(t, 1, alerts, "alert should only fire once per 24 hours")
+	assert.Equal(t, firstAlertTime, mouseMover.state.getLastAlertTime(), "alert time should not move")
 }

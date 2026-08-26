@@ -1,60 +1,44 @@
 package mousemover
 
 import (
+	"log/slog"
 	"os"
 	"time"
-
-	"github.com/go-vgo/robotgo"
-	"github.com/sirupsen/logrus"
-	log "github.com/sirupsen/logrus"
 )
 
-func getLogger(m *MouseMover, doWriteToFile bool, filename string) *log.Logger {
-	logger := log.New()
-	logger.Formatter = &logrus.TextFormatter{
-		FullTimestamp: true,
-	}
+// getLogger returns the logger for one run. Writing to a file is off by default and
+// only meant for debugging; a file that cannot be opened downgrades to stderr rather
+// than killing the app.
+func getLogger(m *MouseMover, doWriteToFile bool, filename string) *slog.Logger {
+	out := os.Stderr
 
 	if doWriteToFile {
-		_, err := os.Stat(logDir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				err = os.Mkdir(logDir, os.ModePerm)
-				if err != nil {
-					log.Fatalf("error creating dir: %v", err)
-				}
-			}
+		if err := os.MkdirAll(logDir, os.ModePerm); err != nil {
+			slog.Error("could not create log dir, logging to stderr", "dir", logDir, "err", err)
+			return slog.New(slog.NewTextHandler(out, nil))
 		}
 
 		logFile, err := os.OpenFile(logDir+"/"+filename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 		if err != nil {
-			log.Fatalf("error opening file: %v", err)
+			slog.Error("could not open log file, logging to stderr", "file", filename, "err", err)
+			return slog.New(slog.NewTextHandler(out, nil))
 		}
-		logger.SetOutput(logFile)
 		m.logFile = logFile
+		out = logFile
 	}
 
-	return logger
+	return slog.New(slog.NewTextHandler(out, nil))
 }
 
-func moveAndCheck(state *state, movePixel int, mouseMoveSuccessCh chan bool) {
-	if state.override != nil { //we don't want to move mouse for tests
-		mouseMoveSuccessCh <- state.override.valueToReturn
-		return
-	}
-	currentX, currentY := robotgo.GetMousePos()
-	moveToX := currentX + movePixel
-	moveToY := currentY + movePixel
-	robotgo.Move(moveToX, moveToY)
+// moveAndCheck nudges the cursor and reports whether it actually moved. An unchanged
+// position means macOS swallowed the event, which is what happens when AMM has not been
+// granted Accessibility permission.
+func moveAndCheck(p platform, movePixel int) bool {
+	currentX, currentY := p.MousePos()
+	p.MoveMouse(currentX+movePixel, currentY+movePixel)
 
-	//check if mouse moved. Sometimes mac users need to give
-	//extra permission for controlling the mouse
-	movedX, movedY := robotgo.GetMousePos()
-	if movedX == currentX && movedY == currentY {
-		mouseMoveSuccessCh <- false
-	} else {
-		mouseMoveSuccessCh <- true
-	}
+	movedX, movedY := p.MousePos()
+	return movedX != currentX || movedY != currentY
 }
 
 // getters and setters for state variable
@@ -68,18 +52,6 @@ func (s *state) updateRunningStatus(isRunning bool) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	s.isAppRunning = isRunning
-}
-
-func (s *state) isSystemSleeping() bool {
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
-	return s.isSysSleeping
-}
-
-func (s *state) updateMachineSleepStatus(isSleeping bool) {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	s.isSysSleeping = isSleeping
 }
 
 func (s *state) getLastMouseMovedTime() time.Time {
@@ -104,6 +76,18 @@ func (s *state) updateLastErrorTime(time time.Time) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	s.lastErrorTime = time
+}
+
+func (s *state) getLastAlertTime() time.Time {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	return s.lastAlertTime
+}
+
+func (s *state) updateLastAlertTime(time time.Time) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	s.lastAlertTime = time
 }
 
 func (s *state) getDidNotMoveCount() int {

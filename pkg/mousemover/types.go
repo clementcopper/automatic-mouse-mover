@@ -8,23 +8,27 @@ import (
 
 //MouseMover is the main struct for the app
 type MouseMover struct {
-	quit    chan struct{}
-	logFile *os.File
-	state   *state
+	quit     chan struct{}
+	logFile  *os.File
+	state    *state
+	platform platform
+}
+
+//platform is everything the engine needs from macOS. internal/mac implements it for
+//real; tests substitute a fake, which keeps them free of cgo and of the actual cursor.
+type platform interface {
+	IdleSeconds() float64
+	MousePos() (int, int)
+	MoveMouse(x, y int)
+	Alert(title, msg string)
 }
 
 //state manages the internal working of the app
 type state struct {
 	mutex              sync.RWMutex
 	isAppRunning       bool
-	isSysSleeping      bool
 	lastMouseMovedTime time.Time
 	lastErrorTime      time.Time
+	lastAlertTime      time.Time
 	didNotMoveCount    int
-	override           *override
-}
-
-//only needed for tests
-type override struct {
-	valueToReturn bool
 }

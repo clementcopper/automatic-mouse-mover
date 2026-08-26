@@ -1,0 +1,71 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project policy
+
+The README states this is a **stable build in maintenance mode**: no new features unless something breaks with newer macOS versions. Feature requests are pointed at the fork `github.com/Resousse/automatic-mouse-mover`. Keep changes minimal and scoped to fixes.
+
+macOS-only. `robotgo` and `systray` need cgo and Cocoa; nothing here builds meaningfully on Linux.
+
+## Commands
+
+```bash
+make build     # universal (arm64 + amd64) ./bin/amm.app bundle, prints `lipo -archs`
+make           # build, then `open ./bin`
+make start     # go run cmd/main.go — runs the tray app directly
+make clean     # rm -rf ./bin
+make vet       # go vet ./...
+make coverage  # go test -race -coverprofile, then HTML report at cover.html
+go test -race -v ./...                                              # what CI runs
+go test -v -run 'TestSuite/TestMouseMoveFailure' ./pkg/mousemover/   # single test
+```
+
+Tests use a testify **suite**, so a single test is addressed as `TestSuite/<Name>`, not by its bare name.
+
+Needs Go 1.25+. CI (`.github/workflows/go.yml`) runs on `macos-15`: vet, `go test -race`, then `make build`.
+
+The build sets no `-mmacosx-version-min`, so the binary targets the build host's macOS version. That used to be mandatory because of robotgo; with robotgo gone a minimum target could be set again. See LEARNINGS.md.
+
+## Architecture
+
+**Zero runtime dependencies.** `go.mod` requires only testify, and only for tests. Everything native lives in `internal/mac`.
+
+- `cmd/main.go` — builds the menu and drives `mousemover` through `Start()` / `Quit()`. Menu clicks are handled in a single `select` loop over each item's `ClickedCh`. No config, no persistence.
+- `internal/mac` — all cgo. `mac.go`/`mac.m` wrap CoreGraphics (idle time, cursor, alert); `menubar.go`/`menubar.m` wrap AppKit (`NSStatusItem`). Replaced robotgo, activity-tracker, mac-sleep-notifier and systray.
+- `pkg/mousemover` — the engine, no cgo. `GetInstance()` returns a package-level singleton.
+
+### The core loop (`mouseMover.go`)
+
+`Start()` creates a 30 s ticker and hands it to `run()`, which spawns the loop goroutine. Per tick:
+
+- `IdleSeconds()` below `idleThreshold` (60 s) → do nothing, the user is at the machine.
+- Otherwise `moveAndCheck`, and on success **flip the sign of `movePixel`** so the cursor oscillates instead of drifting off screen. On failure bump `didNotMoveCount`; at ≥10 failures and >24 h since the last alert, show the "grant Accessibility permission" alert from the README.
+
+The whole activity detection is one call: `CGEventSourceSecondsSinceLastEventType(kCGEventSourceStateHIDSystemState, kCGAnyInputEventType)`. No polling, no event tap, no accessibility API.
+
+`MoveMouse` posts a real HID event (`CGEventPost(kCGHIDEventTap, …)`) rather than warping the cursor — that is what resets the system idle timer and keeps the Mac awake. `moveAndCheck` detects failure by reading the position, moving, and reading again: unchanged = macOS dropped the event because Accessibility permission is missing.
+
+There is **no sleep detection**. A sleeping Mac runs no goroutines, and in clamshell mode AMM is supposed to keep working — a display-asleep guard would break exactly that case.
+
+### State and test seams
+
+All of `state` sits behind an `sync.RWMutex` with getter/setter pairs in `mouseMoverUtil.go` — never touch the struct fields directly from the loop. The `platform` interface (`types.go`) is the test seam: `internal/mac.API` implements it for real, tests substitute `fakePlatform` and drive `run()` with their own tick channel, resetting the singleton with `instance = nil` in `SetupTest`. Tests therefore need no cgo, no cursor and pop no dialog.
+
+Logging is per-run via `getLogger(m, doWriteToFile, filename)` on `log/slog`; file output is off by default.
+
+### Menu bar (`internal/mac/menubar.m`)
+
+Every AppKit call funnels through `runOnMain` — menu items are built from a goroutine, and touching AppKit off the main thread crashes. `init()` in `menubar.go` calls `runtime.LockOSThread()` so `[NSApp run]` gets the process' first thread.
+
+`[gMenu setAutoenablesItems:NO]` is load-bearing: without it AppKit re-decides enabled state at menu-display time and silently overrides `setEnabled:`, so Start/Stop stop greying out. A programmatic read-back of `isEnabled` cannot see this — it only shows up when a human opens the menu.
+
+### Icons
+
+`assets/icon/cloud.go` is a **generated** byte array (2goarray) — regenerate rather than hand-edit. It is the only icon; the picker was removed. The app bundle's own Finder icon is separate: `appInfo/icon.icns`, copied by the Makefile.
+
+`Info.plist` sets `LSUIElement=true` — menu-bar-only, no dock icon. The version lives in two places that must be bumped together with the release tag: the `version` const in `cmd/main.go` and `CFBundleShortVersionString`/`CFBundleVersion` in `appInfo/Info.plist`.
+
+## Learnings
+
+Dependency traps and past debugging dead ends are in [LEARNINGS.md](LEARNINGS.md). Read it before touching `go.mod` or the build flags.

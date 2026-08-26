@@ -2,17 +2,22 @@ package mousemover
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 
-	"github.com/go-vgo/robotgo"
-	"github.com/prashantgupta24/activity-tracker/pkg/activity"
-	"github.com/prashantgupta24/activity-tracker/pkg/tracker"
+	"github.com/prashantgupta24/automatic-mouse-mover/internal/mac"
 )
 
 var instance *MouseMover
 
 const (
-	timeout     = 100 //ms
+	//how often the idle time is looked at
+	checkInterval = 30 * time.Second
+	//how long the machine has to be idle before the cursor is nudged
+	idleThreshold = 60 * time.Second
+	//how many failed moves before the accessibility alert is shown
+	failuresBeforeAlert = 10
+
 	logDir      = "log"
 	logFileName = "logFile-amm-5"
 )
@@ -25,86 +30,68 @@ func (m *MouseMover) Start() {
 	m.state = &state{}
 	m.quit = make(chan struct{})
 
-	heartbeatInterval := 60 //value always in seconds
-	workerInterval := 10
-
-	activityTracker := &tracker.Instance{
-		HeartbeatInterval: heartbeatInterval,
-		WorkerInterval:    workerInterval,
-		// LogLevel:          "debug", //if we want verbose logging
-	}
-
-	heartbeatCh := activityTracker.Start()
-	m.run(heartbeatCh, activityTracker)
+	ticker := time.NewTicker(checkInterval)
+	m.run(ticker.C, ticker.Stop)
 }
 
-func (m *MouseMover) run(heartbeatCh chan *tracker.Heartbeat, activityTracker *tracker.Instance) {
+//run drives the loop. The tick channel and stop function are parameters so tests can
+//drive it themselves instead of waiting on a real ticker.
+func (m *MouseMover) run(tick <-chan time.Time, stop func()) {
 	go func() {
 		state := m.state
-		if state != nil && state.isRunning() {
-			return
-		}
 		state.updateRunningStatus(true)
 
 		logger := getLogger(m, false, logFileName) //set writeToFile=true only for debugging
 		movePixel := 10
+
 		for {
 			select {
-			case heartbeat := <-heartbeatCh:
-				if !heartbeat.WasAnyActivity {
-					if state.isSystemSleeping() {
-						logger.Infof("system sleeping")
-						continue
-					}
-					mouseMoveSuccessCh := make(chan bool)
-					go moveAndCheck(state, movePixel, mouseMoveSuccessCh)
-					select {
-					case wasMouseMoveSuccess := <-mouseMoveSuccessCh:
-						if wasMouseMoveSuccess {
-							state.updateLastMouseMovedTime(time.Now())
-							logger.Infof("Is system sleeping? : %v : moved mouse at : %v\n\n", state.isSystemSleeping(), state.getLastMouseMovedTime())
-							movePixel *= -1
-							state.updateDidNotMoveCount(0)
-						} else {
-							didNotMoveCount := state.getDidNotMoveCount()
-							state.updateDidNotMoveCount(didNotMoveCount + 1)
-							state.updateLastErrorTime(time.Now())
-							msg := fmt.Sprintf("Mouse pointer cannot be moved at %v. Last moved at %v. Happened %v times. (Only notifies once every 24 hours.) See README for details.",
-								time.Now(), state.getLastMouseMovedTime(), state.getDidNotMoveCount())
-							logger.Errorf(msg)
-							if state.getDidNotMoveCount() >= 10 && (time.Since(state.lastErrorTime).Hours() > 24) { //show only 1 error in a 24 hour window
-								go func() {
-									robotgo.Alert("Error with Automatic Mouse Mover", msg)
-								}()
-							}
-						}
-					case <-time.After(timeout * time.Millisecond):
-						//timeout, do nothing
-						logger.Errorf("timeout happened after %vms while trying to move mouse", timeout)
-					}
-				} else {
-					logger.Infof("activity detected in the last %v seconds.", int(activityTracker.HeartbeatInterval))
-					logger.Infof("Activity type:\n")
-					for activityType, times := range heartbeat.ActivityMap {
-						logger.Infof("activityType : %v times: %v\n", activityType, len(times))
-						if activityType == activity.MachineSleep {
-							state.updateMachineSleepStatus(true)
-							logger.Infof("system sleep registered. Is system sleeping? : %v", state.isSystemSleeping())
-							break
-						} else {
-							state.updateMachineSleepStatus(false)
-						}
-					}
-					logger.Infof("\n\n\n")
+			case <-tick:
+				idle := m.platform.IdleSeconds()
+				if idle < idleThreshold.Seconds() {
+					logger.Debug("activity detected, leaving the cursor alone", "idleSeconds", idle)
+					continue
 				}
+
+				if !moveAndCheck(m.platform, movePixel) {
+					m.reportFailedMove(logger, state)
+					continue
+				}
+
+				state.updateLastMouseMovedTime(time.Now())
+				state.updateDidNotMoveCount(0)
+				//flip the direction so the cursor oscillates instead of drifting off screen
+				movePixel *= -1
+				logger.Info("moved mouse", "at", state.getLastMouseMovedTime())
+
 			case <-m.quit:
-				logger.Infof("stopping mouse mover")
+				logger.Info("stopping mouse mover")
 				state.updateRunningStatus(false)
-				activityTracker.Quit()
+				stop()
 				return
 			}
 		}
 	}()
+}
+
+//reportFailedMove counts a failed move and, at most once every 24 hours, tells the user
+//that AMM is most likely missing Accessibility permission.
+func (m *MouseMover) reportFailedMove(logger *slog.Logger, state *state) {
+	state.updateDidNotMoveCount(state.getDidNotMoveCount() + 1)
+	state.updateLastErrorTime(time.Now())
+
+	msg := fmt.Sprintf("Mouse pointer cannot be moved at %v. Last moved at %v. Happened %v times. (Only notifies once every 24 hours.) See README for details.",
+		time.Now(), state.getLastMouseMovedTime(), state.getDidNotMoveCount())
+	logger.Error(msg)
+
+	//lastAlertTime is tracked separately from lastErrorTime, which was just set to now -
+	//comparing against that one made this condition permanently false.
+	lastAlertTime := state.getLastAlertTime()
+	if state.getDidNotMoveCount() >= failuresBeforeAlert &&
+		(lastAlertTime.IsZero() || time.Since(lastAlertTime).Hours() > 24) {
+		state.updateLastAlertTime(time.Now())
+		go m.platform.Alert("Error with Automatic Mouse Mover", msg)
+	}
 }
 
 // Quit the app
@@ -122,7 +109,8 @@ func (m *MouseMover) Quit() {
 func GetInstance() *MouseMover {
 	if instance == nil {
 		instance = &MouseMover{
-			state: &state{},
+			state:    &state{},
+			platform: mac.API{},
 		}
 	}
 	return instance
