@@ -24,6 +24,12 @@ build: clean
 		go build -o ./bin/amm-amd64 cmd/main.go
 	lipo -create -output ./bin/amm.app/Contents/MacOS/amm ./bin/amm-arm64 ./bin/amm-amd64
 	rm ./bin/amm-arm64 ./bin/amm-amd64
+# Ad-hoc sign the bundle. Apple Silicon refuses to run unsigned arm64 code, and while
+# the Go linker signs the arm64 slice itself, the surrounding .app stays unsigned - the
+# bundle is what macOS validates at launch. This is not notarisation: a downloaded copy
+# still needs its quarantine attribute cleared.
+	codesign --force --sign - ./bin/amm.app
+	codesign --verify ./bin/amm.app
 	lipo -archs ./bin/amm.app/Contents/MacOS/amm
 
 open: build

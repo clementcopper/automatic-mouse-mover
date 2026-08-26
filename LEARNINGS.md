@@ -86,6 +86,13 @@ Two lessons worth keeping:
   `CGO_ENABLED=1 GOARCH=arm64 CGO_CFLAGS="-arch arm64" CGO_LDFLAGS="-arch arm64"`.
   `make build` does both arches plus `lipo` and prints `lipo -archs`, so the result is
   verified rather than assumed.
+- **Ad-hoc sign the bundle, not just the binary.** Apple Silicon refuses to run unsigned
+  arm64 code. The Go linker already signs the arm64 slice (`adhoc, linker-signed`) and
+  `lipo` preserves it, but the surrounding `.app` stays unsigned — and the bundle is what
+  macOS validates at launch. `codesign --verify` names it exactly: *code has no resources
+  but signature indicates they must be present*. `codesign --force --sign - ./bin/amm.app`
+  in the Makefile fixes it; both slices survive. This is not notarisation, so a copy that
+  travelled through a download still needs `xattr -cr`.
 - `-mmacosx-version-min` used to be forbidden here because robotgo switched screen
   capture backends on it. robotgo is gone; a minimum deployment target could now be set
   if releases need to run on older macOS than the build host.

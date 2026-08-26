@@ -11,7 +11,7 @@ macOS-only. `robotgo` and `systray` need cgo and Cocoa; nothing here builds mean
 ## Commands
 
 ```bash
-make build     # universal (arm64 + amd64) ./bin/amm.app bundle, prints `lipo -archs`
+make build     # universal (arm64 + amd64) ./bin/amm.app, ad-hoc signed, prints `lipo -archs`
 make           # build, then `open ./bin`
 make start     # go run cmd/main.go — runs the tray app directly
 make clean     # rm -rf ./bin
