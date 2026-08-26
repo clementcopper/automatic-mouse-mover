@@ -29,7 +29,7 @@ func main() {
 // onReady already runs on its own goroutine, so it may block in the menu loop.
 func onReady() {
 	platform := mac.API{}
-	mac.SetIcon(icon.CloudIcon)
+	mac.SetIcon(icon.Tray)
 
 	about := mac.AddMenuItem("About AMM", "Information about the app")
 	mac.AddSeparator()

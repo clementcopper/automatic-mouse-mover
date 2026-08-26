@@ -62,11 +62,21 @@ Every AppKit call funnels through `runOnMain` — menu items are built from a go
 
 ### Icons
 
-`assets/icon/cloud.go` is a **generated** byte array (2goarray) — regenerate rather than hand-edit. It is the only icon; the picker was removed.
+`assets/icon/tray.png` is embedded with `//go:embed tray.*`, so swapping the menu bar
+icon means replacing that one file — PNG or SVG, both verified to load through
+`NSImage initWithData:` and to rasterise. Keep exactly one `tray.*` file. The artwork
+must stay **pure black plus alpha**: it is drawn as a template image
+(`[image setTemplate:YES]` in `menubar.m`), so AppKit tints it from the alpha and
+discards colour.
 
-The icon is set as a **template image** (`[image setTemplate:YES]` in `menubar.m`), so AppKit tints it: black on a light menu bar, white on a dark one, inverted while the menu is open, and correct when the bar picks up colour from the wallpaper. A replacement icon must therefore stay **pure black plus alpha** — anything coloured gets flattened to a silhouette. The app bundle's own Finder icon is separate: `appInfo/icon.icns`, copied by the Makefile.
+The app bundle's Finder icon is separate and may be in colour: `appInfo/icon.icns`,
+copied by the Makefile. Build it from an `.iconset` folder with the ten standard sizes
+and `iconutil -c icns`. The current one holds only a 512px representation, so macOS
+downscales it for every smaller slot.
 
-`Info.plist` sets `LSUIElement=true` — menu-bar-only, no dock icon. The version lives in two places that must be bumped together with the release tag: the `version` const in `cmd/main.go` and `CFBundleShortVersionString`/`CFBundleVersion` in `appInfo/Info.plist`.
+`Info.plist` sets `LSUIElement=true` — menu-bar-only, no dock icon. The version lives in
+two places that must be bumped together with the release tag: the `version` const in
+`cmd/main.go` and `CFBundleShortVersionString`/`CFBundleVersion` in `appInfo/Info.plist`.
 
 ## Learnings
 

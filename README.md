@@ -75,8 +75,21 @@ guessing at a cursor that will not move.
 The menu bar icon is a template image, so it turns black or white to match a light or
 dark menu bar on its own.
 
-Like Launch at Login, a rebuilt or replaced app has to be registered again — untick and
-tick it once after updating.
+Like the Accessibility grant, the login item is tied to the exact binary: after updating
+the app, untick **Launch at Login** and tick it again.
+
+### Changing the icon
+
+Replace `assets/icon/tray.png` with your own `tray.png` or `tray.svg` and rebuild. Keep
+exactly one `tray.*` file; there is no generator step.
+
+It has to be **pure black plus an alpha channel**. AppKit tints the icon from the alpha
+and throws the colour away, so anything coloured collapses into a silhouette. SVG stays
+sharp at any scale; for PNG, 32x32 matches the 16pt icon on a Retina display exactly.
+
+The app's Finder icon is a separate file, `appInfo/icon.icns`, and that one may be in
+colour. Build it from an `.iconset` folder holding `icon_16x16.png` through
+`icon_512x512@2x.png`, then `iconutil -c icns amm.iconset`.
 
 ## How it works
 
