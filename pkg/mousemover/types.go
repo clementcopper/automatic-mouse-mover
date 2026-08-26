@@ -6,16 +6,18 @@ import (
 	"time"
 )
 
-//MouseMover is the main struct for the app
+// MouseMover is the main struct for the app
 type MouseMover struct {
-	quit     chan struct{}
+	quit chan struct{}
+	//kick asks the loop to check right now instead of waiting for the next tick
+	kick     chan struct{}
 	logFile  *os.File
 	state    *state
 	platform platform
 }
 
-//platform is everything the engine needs from macOS. internal/mac implements it for
-//real; tests substitute a fake, which keeps them free of cgo and of the actual cursor.
+// platform is everything the engine needs from macOS. internal/mac implements it for
+// real; tests substitute a fake, which keeps them free of cgo and of the actual cursor.
 type platform interface {
 	AccessibilityTrusted() bool
 	IdleSeconds() float64
@@ -24,7 +26,7 @@ type platform interface {
 	Alert(title, msg string)
 }
 
-//state manages the internal working of the app
+// state manages the internal working of the app
 type state struct {
 	mutex              sync.RWMutex
 	isAppRunning       bool

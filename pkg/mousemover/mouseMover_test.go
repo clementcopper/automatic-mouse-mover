@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-//fakePlatform stands in for internal/mac so the tests never touch cgo, the real cursor
-//or a real dialog.
+// fakePlatform stands in for internal/mac so the tests never touch cgo, the real cursor
+// or a real dialog.
 type fakePlatform struct {
 	mutex sync.Mutex
 
@@ -100,7 +100,7 @@ func (suite *TestMover) SetupTest() {
 	suite.fake = &fakePlatform{canMove: true, trusted: true}
 }
 
-//newMover returns a started mover wired to the fake platform.
+// newMover returns a started mover wired to the fake platform.
 func (suite *TestMover) newMover(idleSeconds float64, canMove bool) *MouseMover {
 	suite.fake.idleSeconds = idleSeconds
 	suite.fake.canMove = canMove
@@ -109,13 +109,14 @@ func (suite *TestMover) newMover(idleSeconds float64, canMove bool) *MouseMover 
 	mouseMover.platform = suite.fake
 	mouseMover.state = &state{}
 	mouseMover.quit = make(chan struct{})
+	mouseMover.kick = make(chan struct{}, 1)
 	mouseMover.run(suite.tickCh, func() {})
 	time.Sleep(time.Millisecond * 100) //wait for the loop to start
 
 	return mouseMover
 }
 
-//tick drives n iterations of the loop and waits for them to be processed.
+// tick drives n iterations of the loop and waits for them to be processed.
 func (suite *TestMover) tick(n int) {
 	for i := 0; i < n; i++ {
 		suite.tickCh <- time.Now()
@@ -149,8 +150,8 @@ func (suite *TestMover) TestLogFile() {
 	os.RemoveAll(logDir)
 }
 
-//TestActivityLeavesCursorAlone is the core promise of the app: while the user is at the
-//machine, AMM must not touch the cursor.
+// TestActivityLeavesCursorAlone is the core promise of the app: while the user is at the
+// machine, AMM must not touch the cursor.
 func (suite *TestMover) TestActivityLeavesCursorAlone() {
 	t := suite.T()
 	mouseMover := suite.newMover(idleThreshold.Seconds()-1, true)
@@ -174,8 +175,8 @@ func (suite *TestMover) TestMouseMoveSuccess() {
 	assert.Equal(t, 0, mouseMover.state.getDidNotMoveCount(), "should be 0")
 }
 
-//TestMoveDirectionAlternates guards the sign flip that keeps the cursor oscillating
-//instead of drifting off screen.
+// TestMoveDirectionAlternates guards the sign flip that keeps the cursor oscillating
+// instead of drifting off screen.
 func (suite *TestMover) TestMoveDirectionAlternates() {
 	t := suite.T()
 	suite.newMover(idleThreshold.Seconds()+1, true)
@@ -203,10 +204,10 @@ func (suite *TestMover) TestMouseMoveFailure() {
 	assert.False(t, mouseMover.state.getLastErrorTime().IsZero(), "error time should be set")
 }
 
-//TestMoveIsNotJudgedTooEarly guards the CGEventPost race. The cursor position only
-//updates once the posted event has been delivered, so reading it back immediately
-//reported every move as failed - which drove didNotMoveCount to the alert threshold
-//while the mouse was in fact moving perfectly well.
+// TestMoveIsNotJudgedTooEarly guards the CGEventPost race. The cursor position only
+// updates once the posted event has been delivered, so reading it back immediately
+// reported every move as failed - which drove didNotMoveCount to the alert threshold
+// while the mouse was in fact moving perfectly well.
 func (suite *TestMover) TestMoveIsNotJudgedTooEarly() {
 	t := suite.T()
 	suite.fake.moveDelay = 40 * time.Millisecond
@@ -220,10 +221,10 @@ func (suite *TestMover) TestMoveIsNotJudgedTooEarly() {
 	assert.Equal(t, 0, alerts, "no alert for a move that worked")
 }
 
-//TestUntrustedAlertsImmediately covers the case that actually bit in the field: the
-//Accessibility box still looked ticked, but the grant was pinned to an older build's
-//cdhash, so macOS refused. Waiting out ten failures before saying anything sent the user
-//looking in the wrong place for five minutes.
+// TestUntrustedAlertsImmediately covers the case that actually bit in the field: the
+// Accessibility box still looked ticked, but the grant was pinned to an older build's
+// cdhash, so macOS refused. Waiting out ten failures before saying anything sent the user
+// looking in the wrong place for five minutes.
 func (suite *TestMover) TestUntrustedAlertsImmediately() {
 	t := suite.T()
 	suite.fake.trusted = false
@@ -236,8 +237,8 @@ func (suite *TestMover) TestUntrustedAlertsImmediately() {
 	assert.Equal(t, 1, alerts, "should alert on the first failure when not trusted")
 }
 
-//TestTrustedStillWaitsForThreshold keeps the original behaviour when permission is fine
-//and the move failed for some other reason.
+// TestTrustedStillWaitsForThreshold keeps the original behaviour when permission is fine
+// and the move failed for some other reason.
 func (suite *TestMover) TestTrustedStillWaitsForThreshold() {
 	t := suite.T()
 	mouseMover := suite.newMover(idleThreshold.Seconds()+1, false)
@@ -249,9 +250,51 @@ func (suite *TestMover) TestTrustedStillWaitsForThreshold() {
 	assert.Equal(t, 0, alerts, "no alert before the threshold when trusted")
 }
 
-//TestAlertThrottle guards the 24-hour alert window. It used to compare against
-//lastErrorTime, which was set to time.Now() a few lines above the check, so the
-//condition was never true and the accessibility alert never showed.
+// TestCheckNowMovesWithoutWaitingForTick covers the wake path: after the Mac comes back
+// the loop should look at the idle time straight away rather than sitting out up to a
+// full check interval.
+func (suite *TestMover) TestCheckNowMovesWithoutWaitingForTick() {
+	t := suite.T()
+	mouseMover := suite.newMover(idleThreshold.Seconds()+1, true)
+
+	mouseMover.CheckNow()
+	time.Sleep(time.Millisecond * 300)
+
+	moves, _ := suite.fake.counts()
+	assert.Equal(t, 1, moves, "a kick should move without a tick")
+	assert.False(t, mouseMover.state.getLastMouseMovedTime().IsZero(), "move time should be set")
+}
+
+// TestCheckNowIsIgnoredWhenStopped keeps a wake from reviving a mover the user stopped.
+func (suite *TestMover) TestCheckNowIsIgnoredWhenStopped() {
+	t := suite.T()
+	mouseMover := suite.newMover(idleThreshold.Seconds()+1, true)
+
+	mouseMover.state.updateRunningStatus(false)
+	mouseMover.CheckNow()
+	time.Sleep(time.Millisecond * 300)
+
+	moves, _ := suite.fake.counts()
+	assert.Equal(t, 0, moves, "a stopped mover must stay put")
+	assert.False(t, mouseMover.IsRunning(), "IsRunning should report stopped")
+}
+
+// TestCheckNowRespectsActivity makes sure the wake kick is still subject to the idle
+// threshold - waking the Mac by touching the keyboard must not move the cursor.
+func (suite *TestMover) TestCheckNowRespectsActivity() {
+	t := suite.T()
+	mouseMover := suite.newMover(idleThreshold.Seconds()-1, true)
+
+	mouseMover.CheckNow()
+	time.Sleep(time.Millisecond * 300)
+
+	moves, _ := suite.fake.counts()
+	assert.Equal(t, 0, moves, "should not move while the user is active")
+}
+
+// TestAlertThrottle guards the 24-hour alert window. It used to compare against
+// lastErrorTime, which was set to time.Now() a few lines above the check, so the
+// condition was never true and the accessibility alert never showed.
 func (suite *TestMover) TestAlertThrottle() {
 	t := suite.T()
 	mouseMover := suite.newMover(idleThreshold.Seconds()+1, false)

@@ -24,8 +24,8 @@ const (
 	logFileName = "logFile-amm-5"
 )
 
-//how long to wait for a posted mouse event to take effect before calling it a failure.
-//A var, not a const, so tests do not have to sit out the real budget.
+// how long to wait for a posted mouse event to take effect before calling it a failure.
+// A var, not a const, so tests do not have to sit out the real budget.
 var moveSettleTimeout = 200 * time.Millisecond
 
 // Start the main app
@@ -35,13 +35,14 @@ func (m *MouseMover) Start() {
 	}
 	m.state = &state{}
 	m.quit = make(chan struct{})
+	m.kick = make(chan struct{}, 1)
 
 	ticker := time.NewTicker(checkInterval)
 	m.run(ticker.C, ticker.Stop)
 }
 
-//run drives the loop. The tick channel and stop function are parameters so tests can
-//drive it themselves instead of waiting on a real ticker.
+// run drives the loop. The tick channel and stop function are parameters so tests can
+// drive it themselves instead of waiting on a real ticker.
 func (m *MouseMover) run(tick <-chan time.Time, stop func()) {
 	go func() {
 		state := m.state
@@ -53,22 +54,10 @@ func (m *MouseMover) run(tick <-chan time.Time, stop func()) {
 		for {
 			select {
 			case <-tick:
-				idle := m.platform.IdleSeconds()
-				if idle < idleThreshold.Seconds() {
-					logger.Debug("activity detected, leaving the cursor alone", "idleSeconds", idle)
-					continue
-				}
+				m.checkAndMove(logger, state, &movePixel)
 
-				if !moveAndCheck(m.platform, movePixel) {
-					m.reportFailedMove(logger, state)
-					continue
-				}
-
-				state.updateLastMouseMovedTime(time.Now())
-				state.updateDidNotMoveCount(0)
-				//flip the direction so the cursor oscillates instead of drifting off screen
-				movePixel *= -1
-				logger.Info("moved mouse", "at", state.getLastMouseMovedTime())
+			case <-m.kick:
+				m.checkAndMove(logger, state, &movePixel)
 
 			case <-m.quit:
 				logger.Info("stopping mouse mover")
@@ -80,8 +69,28 @@ func (m *MouseMover) run(tick <-chan time.Time, stop func()) {
 	}()
 }
 
-//reportFailedMove counts a failed move and, at most once every 24 hours, tells the user
-//that AMM is most likely missing Accessibility permission.
+// checkAndMove is one iteration: nudge the cursor unless the user is active.
+func (m *MouseMover) checkAndMove(logger *slog.Logger, state *state, movePixel *int) {
+	idle := m.platform.IdleSeconds()
+	if idle < idleThreshold.Seconds() {
+		logger.Debug("activity detected, leaving the cursor alone", "idleSeconds", idle)
+		return
+	}
+
+	if !moveAndCheck(m.platform, *movePixel) {
+		m.reportFailedMove(logger, state)
+		return
+	}
+
+	state.updateLastMouseMovedTime(time.Now())
+	state.updateDidNotMoveCount(0)
+	//flip the direction so the cursor oscillates instead of drifting off screen
+	*movePixel *= -1
+	logger.Info("moved mouse", "at", state.getLastMouseMovedTime())
+}
+
+// reportFailedMove counts a failed move and, at most once every 24 hours, tells the user
+// that AMM is most likely missing Accessibility permission.
 func (m *MouseMover) reportFailedMove(logger *slog.Logger, state *state) {
 	state.updateDidNotMoveCount(state.getDidNotMoveCount() + 1)
 	state.updateLastErrorTime(time.Now())
@@ -119,6 +128,23 @@ func (m *MouseMover) reportFailedMove(logger *slog.Logger, state *state) {
 			title = "Automatic Mouse Mover needs permission"
 		}
 		go m.platform.Alert(title, msg)
+	}
+}
+
+// IsRunning reports whether the mover loop is active.
+func (m *MouseMover) IsRunning() bool {
+	return m != nil && m.state.isRunning()
+}
+
+// CheckNow asks the loop to look at the idle time immediately instead of waiting for the
+// next tick. Non-blocking: a pending kick is enough, a second one adds nothing.
+func (m *MouseMover) CheckNow() {
+	if m == nil || m.kick == nil || !m.state.isRunning() {
+		return
+	}
+	select {
+	case m.kick <- struct{}{}:
+	default:
 	}
 }
 

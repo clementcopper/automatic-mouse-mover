@@ -79,6 +79,14 @@ menu. Both turned out to be a handful of lines of CoreGraphics and AppKit, now i
 - **Ask `AXIsProcessTrusted()` instead of inferring permission from failed moves.** The
   app used to wait out ten failures over five minutes and then blame the mouse. It now
   says what is actually wrong on the first failure.
+- **`SMAppService` status `NotFound` (3) just means "never registered".** It is not an
+  error and not a sign that the bundle is wrong. Measured round trip from
+  `/Applications`: 3 before the first call, 1 (`Enabled`) after `register`, 0
+  (`NotRegistered`) after `unregister`. Ad-hoc signing is enough — the header only
+  demands a signature, notarisation is for LaunchDaemons.
+- **A login item has to be registered again after every rebuild.** Same class as the TCC
+  grant: *"If an app updates either the plist or the executable ... the SMAppService must
+  be re-registered or it may not launch."*
 - **`[menu setAutoenablesItems:NO]` is load-bearing.** Otherwise AppKit re-decides each
   item's enabled state at menu-display time via `validateMenuItem:` and overrides
   `setEnabled:`.
@@ -144,5 +152,8 @@ Two lessons worth keeping:
   condition was never true and the accessibility alert in the README never appeared.
   `TestSuite/TestAlertThrottle` covers it, and was verified by reintroducing the old
   condition and watching the test fail.
-- The repo has never been `gofmt`-clean under modern Go (old `//comment` style without a
-  space). Match the surrounding style; a repo-wide `gofmt -w` would bury real changes.
+- The repo is `gofmt`-clean now. It was not before the rewrite (old `//comment` style
+  without a space), and the mix bit once: a scripted `replace` on `//TestAlertThrottle`
+  silently matched nothing after gofmt had normalised the comment to `// TestAlertThrottle`,
+  so a block of new tests never landed and the run reported "no tests to run" rather than
+  failing. Assert that a search pattern matched before writing the file back.

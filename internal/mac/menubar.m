@@ -112,6 +112,15 @@ void amm_menubar_set_enabled(int itemID, int enabled) {
 	});
 }
 
+void amm_menubar_set_checked(int itemID, int checked) {
+	runOnMain(^{
+		NSMenuItem *item = [gMenu itemWithTag:itemID];
+		if (item != nil) {
+			[item setState:(checked != 0) ? NSControlStateValueOn : NSControlStateValueOff];
+		}
+	});
+}
+
 void amm_menubar_quit(void) {
 	runOnMain(^{
 		[NSApp stop:nil];

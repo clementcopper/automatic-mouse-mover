@@ -28,7 +28,7 @@ var (
 	onExitFunc  func()
 )
 
-//MenuItem is one entry in the status bar menu.
+// MenuItem is one entry in the status bar menu.
 type MenuItem struct {
 	id int
 	//ClickedCh receives a value every time the item is clicked. It is buffered so a
@@ -36,8 +36,8 @@ type MenuItem struct {
 	ClickedCh chan struct{}
 }
 
-//Run sets up the status item and runs the AppKit event loop. It blocks until Quit is
-//called, then invokes onExit. onReady runs once the app has finished launching.
+// Run sets up the status item and runs the AppKit event loop. It blocks until Quit is
+// called, then invokes onExit. onReady runs once the app has finished launching.
 func Run(onReady, onExit func()) {
 	onReadyFunc = onReady
 	onExitFunc = onExit
@@ -45,7 +45,7 @@ func Run(onReady, onExit func()) {
 	C.amm_menubar_run()
 }
 
-//SetIcon sets the status bar icon from PNG bytes.
+// SetIcon sets the status bar icon from PNG bytes.
 func SetIcon(data []byte) {
 	if len(data) == 0 {
 		return
@@ -53,7 +53,7 @@ func SetIcon(data []byte) {
 	C.amm_menubar_set_icon(unsafe.Pointer(&data[0]), C.int(len(data)))
 }
 
-//AddMenuItem appends an entry to the menu.
+// AddMenuItem appends an entry to the menu.
 func AddMenuItem(title, tooltip string) *MenuItem {
 	cTitle := C.CString(title)
 	defer C.free(unsafe.Pointer(cTitle))
@@ -72,22 +72,31 @@ func AddMenuItem(title, tooltip string) *MenuItem {
 	return item
 }
 
-//AddSeparator appends a divider to the menu.
+// AddSeparator appends a divider to the menu.
 func AddSeparator() {
 	C.amm_menubar_add_separator()
 }
 
-//Quit stops the event loop.
+// Quit stops the event loop.
 func Quit() {
 	C.amm_menubar_quit()
 }
 
-//Enable makes the item clickable again.
+// Enable makes the item clickable again.
 func (i *MenuItem) Enable() {
 	C.amm_menubar_set_enabled(C.int(i.id), 1)
 }
 
-//Disable greys the item out.
+// SetChecked shows or hides the tick mark next to the item.
+func (i *MenuItem) SetChecked(checked bool) {
+	var flag C.int
+	if checked {
+		flag = 1
+	}
+	C.amm_menubar_set_checked(C.int(i.id), flag)
+}
+
+// Disable greys the item out.
 func (i *MenuItem) Disable() {
 	C.amm_menubar_set_enabled(C.int(i.id), 0)
 }
