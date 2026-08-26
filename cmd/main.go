@@ -4,14 +4,14 @@ import (
 	"log/slog"
 	"sync/atomic"
 
-	"github.com/prashantgupta24/automatic-mouse-mover/assets/icon"
-	"github.com/prashantgupta24/automatic-mouse-mover/internal/mac"
-	"github.com/prashantgupta24/automatic-mouse-mover/pkg/mousemover"
+	"github.com/clementcopper/automatic-mouse-mover/assets/icon"
+	"github.com/clementcopper/automatic-mouse-mover/internal/mac"
+	"github.com/clementcopper/automatic-mouse-mover/pkg/mousemover"
 )
 
 // version must be kept in sync with CFBundleShortVersionString in appInfo/Info.plist
 // and with the release tag.
-const version = "1.4.0"
+const version = "1.5.0"
 
 // prefResumeAfterWake stores the "Resume After Wake" tick. The login item state is not
 // stored here - macOS owns that one and SMAppService reports it back.
@@ -124,8 +124,8 @@ func onReady() {
 			slog.Info("requesting about")
 			//Alert blocks until dismissed, so keep it off this loop - otherwise the
 			//whole menu stops responding while it is open.
-			go platform.Alert("Automatic-mouse-mover app v"+version,
-				"Developed by Prashant Gupta. \n\nMore info at: https://github.com/prashantgupta24/automatic-mouse-mover")
+			go platform.Alert("Automatic Mouse Mover "+version,
+				"by Daniel Martin\ngithub.com/clementcopper/automatic-mouse-mover\n\nBased on the original by Prashant Gupta, MIT licensed.")
 		}
 	}
 }

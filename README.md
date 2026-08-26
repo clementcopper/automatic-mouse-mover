@@ -1,101 +1,144 @@
+# Automatic Mouse Mover
 
-## Stable build. Might not be willing to add anything new unless something breaks with macOS versions.
+A menu bar app that keeps your Mac awake by nudging the cursor whenever you step away —
+so Slack, Teams and anything else that watches for idle time keep showing you as active.
 
-I would like to keep this app as simple as possible. Hence I will not be adding more functionality to it. Thanks for everyone who contributed in making it awesome!
+It only moves the cursor while you are **not** using the machine. Touch the mouse or the
+keyboard and it stays out of your way.
 
-If you would like new features, feel free to check out: https://github.com/Resousse/automatic-mouse-mover
+macOS 13 or newer, Apple Silicon and Intel.
 
-# Presenting the minimalistic Automatic-Mouse-Mover(AMM) app!
+## How it differs from "prevent sleep" tools
 
-[![version][version-badge]][releases] [![Go Report Card](https://goreportcard.com/badge/github.com/prashantgupta24/automatic-mouse-mover)](https://goreportcard.com/report/github.com/prashantgupta24/automatic-mouse-mover) [![godoc-badge][godoc-badge]][godoc-link] [![codecov](https://codecov.io/gh/prashantgupta24/automatic-mouse-mover/branch/master/graph/badge.svg)](https://codecov.io/gh/prashantgupta24/automatic-mouse-mover)
+`caffeinate` and its kind stop the Mac from *sleeping*. They do not stop a messaging app
+from deciding you are away, because that decision is made from how long it has been since
+the last input event.
 
-Ever felt the need to keep your machine awake without actually having to move the mouse pointer manually at regular intervals? **Well, not anymore!**
+This app posts a real HID event. The system idle timer resets, so the Mac stays awake
+**and** your status stays active. That is as close to sitting at the machine as software
+gets.
 
-Introducing the simplest app that has the sole purpose of **moving your mouse pointer at regular intervals so that your machine is kept awake!** And best of all, it works **ONLY** when you are not working, so be rest assured that the mouse won't start moving on its own without the machine actually being idle.
+## Install
 
-**Table of contents**
+### From the release
 
-<!-- @import "[TOC]" {cmd="toc" depthFrom=2 depthTo=6 orderedList=false} -->
+Download the latest `amm-*-universal.zip` from
+[Releases](https://github.com/clementcopper/automatic-mouse-mover/releases), then:
 
-<!-- code_chunk_output -->
+```bash
+ditto -x -k ~/Downloads/amm-*-universal.zip ~/Downloads/
+mv ~/Downloads/amm.app /Applications/
+xattr -cr /Applications/amm.app
+open /Applications/amm.app
+```
 
-- [How it's different from other apps](#how-its-different-from-other-apps)
-- [How I use it](#how-i-use-it)
-  - [Work from home benefit](#work-from-home-benefit)
-- [Demo](#demo)
-- [How to install](#how-to-install)
-  - [Install from binary](#install-from-binary)
-  - [Install from source](#install-from-source)
-- [Granting access for moving the mouse cursor](#granting-access-for-moving-the-mouse-cursor)
-- [How it works](#how-it-works)
+The app is ad-hoc signed but not notarised, so macOS quarantines anything that arrived
+through a download. `xattr -cr` clears that.
 
-<!-- /code_chunk_output -->
+### From source
 
-## How it's different from other apps
+Needs Go 1.21 or newer and the Xcode Command Line Tools (`xcode-select --install`); the
+full Xcode is not required.
 
-The main difference between this app and other apps is that this app **keeps your machine awake**, whereas other apps keep your machine from going to sleep. Let me explain.
+```bash
+git clone https://github.com/clementcopper/automatic-mouse-mover.git
+cd automatic-mouse-mover
+make build
+```
 
-If you use a messaging app like Slack, they are programmed to automatically change your status to `Away` when you don't interact with your machine for a certain amount of time. Apps which keep your machine from going to sleep will not be able to stop that. This app will prevent that, since **it is actively keeping your machine awake by moving the mouse pointer**.
+`make build` produces a universal `./bin/amm.app`, signs it ad-hoc and prints the
+architectures it contains. Drag it to `/Applications`.
 
-**This comes very close to simulating an actual user using the machine, which the other apps cannot do.**
+## Granting permission
 
-So if you want something that will keep your mac awake as long as you don't manually put it to sleep, then this is for you!
+Moving the cursor needs Accessibility permission:
 
-## How I use it
+**System Settings → Privacy & Security → Accessibility →** add `amm` and tick it.
 
-I always have this app working in the background for me whenever I work from home, so that I can take a break from work, strech my legs, go for a short walk, come back and still have my slack open and set to active! (not having to type in my password every time is awesome, for machines without fingerprint sensors anyway).
+> **If `amm` is already listed there, remove it with the minus button and add it again.**
+>
+> macOS ties the permission to the exact binary through its code signature. Replace or
+> rebuild the app and the tick box still looks fine while the permission no longer
+> applies. Toggling the checkbox does not refresh it — only removing and re-adding does.
 
-Also if I need to go out for longer, I just close the lid, and off goes my mac to sleep!
+Without permission the app tells you so the first time it fails, rather than leaving you
+guessing at a cursor that will not move.
 
-### Work from home benefit
+## The menu
 
-Since this app actively keeps your machine awake, your messaging app will never go on idle and put your status as `Away`.
+| | |
+|---|---|
+| **Start / Stop** | Turn the mover on and off. It starts on its own when the app opens. |
+| **Launch at Login** | Registers the app as a login item, so the mover runs from the moment you log in. Off by default. |
+| **Resume After Wake** | Makes sure the mover is going again after the Mac wakes, and checks immediately instead of waiting for the next interval. On by default. Something you stopped on purpose stays stopped. |
 
-## Demo
+The menu bar icon is a template image, so it turns black or white to match a light or
+dark menu bar on its own.
 
-You just click on `Start`, and AMM will take care of moving your mouse whenever it feels that the system has been left idle for a minute. It's as simple as this.
-
-![](https://github.com/prashantgupta24/automatic-mouse-mover/blob/master/resources/amm-demo.gif)
-
-## How to install
-
-### Install from binary
-
-1. Download the latest `amm.app.zip` from the [releases](https://github.com/prashantgupta24/automatic-mouse-mover/releases) page, unzip it, and copy the .app to your `Applications` folder like any other application.
-
-1. Since the application is not notarized, you will need to right click on the .app and choose Open.
-
-1. You will see a scary message that warns you about all the bad things that the app can do to your computer. If you are paranoid (fair enough, you don't really know me that well) then you can skip to the section which builds the app from source. That way you can see what exactly the app does (You can check that the application makes no connections to the internet whatsoever).
-
-1. In case you do trust me, once you click on `Open`, you might encounter an initial `Access request` which I've discussed in the next section.
-
-### Install from source
-
-Make sure you have `go` installed. Once that is done, clone this repo and run `Make`, it should create the `amm.app` and open the folder where it was built for you. Copy the .app to your `Applications` folder like any other application.
-
-Double click on the app, and the cute `mouse` should appear on your taskbar on top of your screen. Once you click on `Start`, you might encounter an initial `Access request` which I've discussed in the next section. If not, then you are all set!
-
-## Granting access for moving the mouse cursor
-
-While starting the app, you might see a message like the one below or an error stating `Mouse pointer cannot be moved`.
-
-![](https://github.com/prashantgupta24/automatic-mouse-mover/blob/master/resources/request.jpg)
-
-Don't worry, it's nothing sinister, it's just that Mac doesn't allow apps to gain accessibility to the computer by default (even standard apps like Automator, Firefox etc. who might want to access some features need to go through the same process).
-
-In order to resolve this error you need to:
-
-> Go to System Preferences -> Security & Privacy -> Privacy -> Accessibility and allow the `amm` app to gain access.
-
-If you still see the error, try to quit and start the app again (the age-old way of fixing everything).
+Like Launch at Login, a rebuilt or replaced app has to be registered again — untick and
+tick it once after updating.
 
 ## How it works
 
-Every 60 seconds, AMM uses [Activity tracker](https://github.com/prashantgupta24/activity-tracker) to track the various changes that happened in your system during that time, like cursor movement, mouse clicks, screen changes etc. Whenever `AMM` detects a change in the system, it knows that the system is busy and will not do anything. If not, it moves the mouse cursor ever so slightly, enough to keep your Mac awake for eternity.
+Every 30 seconds the app asks macOS how long it has been since the last keyboard, mouse
+or tablet event:
 
-> All code is public and open-sourced so no worrying if there's nefarious intention involved in recording your activity or not.
+```c
+CGEventSourceSecondsSinceLastEventType(kCGEventSourceStateHIDSystemState,
+                                       kCGAnyInputEventType)
+```
 
-[version-badge]: https://img.shields.io/github/release/prashantgupta24/automatic-mouse-mover.svg
-[releases]: https://github.com/prashantgupta24/automatic-mouse-mover/releases
-[godoc-badge]: https://img.shields.io/badge/godoc-reference-blue.svg
-[godoc-link]: https://godoc.org/github.com/prashantgupta24/automatic-mouse-mover/pkg/mousemover
+Past 60 seconds of that, it moves the cursor ten pixels and flips the direction each
+time, so the pointer oscillates instead of drifting into a corner. The move is a posted
+event rather than a warp:
+
+```c
+CGEventPost(kCGHIDEventTap, CGEventCreateMouseEvent(...))
+```
+
+which is exactly why the idle timer resets. If the position does not change afterwards,
+macOS swallowed the event — the app checks whether it actually holds Accessibility
+permission and says so.
+
+There is no sleep detection. A sleeping Mac runs no code, and in clamshell mode the app
+is supposed to keep working, which a display-asleep check would have broken.
+
+## What this fork changes
+
+The app was rewritten to carry **no runtime dependencies at all**. `robotgo`,
+`activity-tracker`, `mac-sleep-notifier` and `systray` are gone, replaced by roughly 250
+lines of CoreGraphics and AppKit. The binary went from 7.7 MB to 3.3 MB per architecture,
+and `go.mod` now asks for nothing but a test library.
+
+Four long-standing failures disappeared with the code that caused them:
+
+- **Crashes on lid close and screen lock** ([#63](https://github.com/prashantgupta24/automatic-mouse-mover/issues/63),
+  [#64](https://github.com/prashantgupta24/automatic-mouse-mover/issues/64)) — an
+  uninitialized struct in a dependency, reached through a window-title lookup that no
+  longer happens.
+- **Build failure on the macOS 15 SDK** ([#62](https://github.com/prashantgupta24/automatic-mouse-mover/issues/62)).
+- **Memory leak of roughly 10 MB a day** ([#29](https://github.com/prashantgupta24/automatic-mouse-mover/issues/29)).
+- **Stuck mouse and keyboard input** ([#54](https://github.com/prashantgupta24/automatic-mouse-mover/issues/54),
+  [#22](https://github.com/prashantgupta24/automatic-mouse-mover/issues/22)) — event taps
+  that were never unwound.
+
+Added along the way:
+
+- A universal build that runs natively on Apple Silicon ([#33](https://github.com/prashantgupta24/automatic-mouse-mover/issues/33))
+- A menu bar icon that follows light and dark mode ([#56](https://github.com/prashantgupta24/automatic-mouse-mover/issues/56))
+- Launch at Login and Resume After Wake
+- A permission check that names the real problem instead of blaming the mouse
+
+Fixed in the engine itself: the cursor was judged before the posted event had landed, so
+every move counted as a failure and the pointer drifted into a screen corner; and the
+"grant permission" alert could never fire, because its 24 hour throttle compared against
+a timestamp set three lines above the check.
+
+## Credits and license
+
+Written by **Daniel Martin**.
+
+Based on the original [automatic-mouse-mover](https://github.com/prashantgupta24/automatic-mouse-mover)
+by Prashant Gupta, which is where the idea and the first five years of this app come from.
+
+MIT licensed — see [LICENSE](LICENSE).

@@ -1,23 +1,12 @@
 /*
-Ever felt the need to keep your machine awake without having to resort to the age-old
-methods of installing an app that you don't trust or playing a video? Well, not anymore!
+Package mousemover keeps a Mac awake by nudging the cursor whenever the machine has been
+idle for a while, so messaging apps do not flip the user's status to away.
 
-Introducing the simplest app on the market that has the sole purpose of moving your mouse
-pointer at regular intervals so that your machine never sleeps! And best of all, it works
-ONLY when you are not working, so be rest assured that the mouse won't start moving on its
-own without the machine actually being idle.
+The engine holds no macOS code of its own. Everything native sits behind the platform
+interface, which internal/mac implements and tests replace with a fake, so the package
+builds and tests without cgo, a real cursor or a real dialog.
 
-# Installation
-
-The libary can be installed using:
-
-	go get -u github.com/automatic-mouse-mover/pkg/mousemover
-
-# Usage
-
-Clone this repo and run Make, it should create the amm.app and open the folder where
-it was built for you. You just have to drag and drop it to the Applications folder on your mac.
-
-Refer to the README for more details.
+GetInstance returns the singleton. Start begins the loop, Quit ends it, CheckNow asks for
+an immediate check instead of waiting out the next tick.
 */
 package mousemover

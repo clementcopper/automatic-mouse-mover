@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project policy
 
-The README states this is a **stable build in maintenance mode**: no new features unless something breaks with newer macOS versions. Feature requests are pointed at the fork `github.com/Resousse/automatic-mouse-mover`. Keep changes minimal and scoped to fixes.
+This is a fork by Daniel Martin, rewritten to carry no runtime dependencies. The upstream `github.com/prashantgupta24/automatic-mouse-mover` is in maintenance mode; this one is not bound by that. Keep the KISS bias though: no framework, no abstraction layer "for later".
 
 macOS-only. `robotgo` and `systray` need cgo and Cocoa; nothing here builds meaningfully on Linux.
 

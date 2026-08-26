@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/prashantgupta24/automatic-mouse-mover/internal/mac"
+	"github.com/clementcopper/automatic-mouse-mover/internal/mac"
 )
 
 var instance *MouseMover
