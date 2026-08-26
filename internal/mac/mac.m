@@ -1,7 +1,14 @@
 #import <CoreFoundation/CoreFoundation.h>
+#import <ApplicationServices/ApplicationServices.h>
 #import <CoreGraphics/CoreGraphics.h>
 
 #include "mac.h"
+
+// Whether this process may post input events. Asking outright beats inferring it from
+// failed moves: a stale Accessibility grant looks exactly like a broken mouse otherwise.
+int amm_accessibility_trusted(void) {
+	return AXIsProcessTrusted() ? 1 : 0;
+}
 
 // Seconds since the last keyboard, mouse or tablet input event.
 //

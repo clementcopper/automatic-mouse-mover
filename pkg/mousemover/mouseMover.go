@@ -86,17 +86,39 @@ func (m *MouseMover) reportFailedMove(logger *slog.Logger, state *state) {
 	state.updateDidNotMoveCount(state.getDidNotMoveCount() + 1)
 	state.updateLastErrorTime(time.Now())
 
-	msg := fmt.Sprintf("Mouse pointer cannot be moved at %v. Last moved at %v. Happened %v times. (Only notifies once every 24 hours.) See README for details.",
-		time.Now(), state.getLastMouseMovedTime(), state.getDidNotMoveCount())
-	logger.Error(msg)
+	//Ask macOS outright rather than inferring it. A grant that has gone stale - which is
+	//what happens to an ad-hoc signed app after any rebuild, since the permission is
+	//pinned to the binary's cdhash - still shows a ticked box in System Settings, so
+	//guessing from failed moves points the user at the wrong thing.
+	trusted := m.platform.AccessibilityTrusted()
 
-	//lastAlertTime is tracked separately from lastErrorTime, which was just set to now -
-	//comparing against that one made this condition permanently false.
+	var msg string
+	if trusted {
+		msg = fmt.Sprintf("Mouse pointer cannot be moved at %v. Last moved at %v. Happened %v times. (Only notifies once every 24 hours.) See README for details.",
+			time.Now(), state.getLastMouseMovedTime(), state.getDidNotMoveCount())
+	} else {
+		msg = "AMM is not allowed to control the mouse.\n\nOpen System Settings > Privacy & Security > Accessibility. If amm is already listed, remove it with the minus button and add it again - a ticked box can still be stale after the app was rebuilt or replaced, because the permission is tied to the exact binary."
+	}
+	logger.Error(msg, "accessibilityTrusted", trusted)
+
+	//Without permission the diagnosis is certain, so say so at once instead of making
+	//the user wait out ten failures. lastAlertTime is tracked separately from
+	//lastErrorTime, which was just set to now - comparing against that one made this
+	//condition permanently false.
+	threshold := failuresBeforeAlert
+	if !trusted {
+		threshold = 1
+	}
+
 	lastAlertTime := state.getLastAlertTime()
-	if state.getDidNotMoveCount() >= failuresBeforeAlert &&
+	if state.getDidNotMoveCount() >= threshold &&
 		(lastAlertTime.IsZero() || time.Since(lastAlertTime).Hours() > 24) {
 		state.updateLastAlertTime(time.Now())
-		go m.platform.Alert("Error with Automatic Mouse Mover", msg)
+		title := "Error with Automatic Mouse Mover"
+		if !trusted {
+			title = "Automatic Mouse Mover needs permission"
+		}
+		go m.platform.Alert(title, msg)
 	}
 }
 

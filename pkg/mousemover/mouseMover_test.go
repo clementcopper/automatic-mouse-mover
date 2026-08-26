@@ -19,6 +19,8 @@ type fakePlatform struct {
 	//canMove false simulates a missing Accessibility permission: the position never
 	//changes, which is exactly how macOS behaves when it drops the event.
 	canMove bool
+	//trusted mirrors AXIsProcessTrusted
+	trusted bool
 	//moveDelay reproduces the real CGEventPost behaviour: the position only updates
 	//after the event has been delivered, not while MoveMouse is still running.
 	moveDelay time.Duration
@@ -26,6 +28,12 @@ type fakePlatform struct {
 	x, y       int
 	moveCount  int
 	alertCount int
+}
+
+func (f *fakePlatform) AccessibilityTrusted() bool {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	return f.trusted
 }
 
 func (f *fakePlatform) IdleSeconds() float64 {
@@ -89,7 +97,7 @@ func (suite *TestMover) SetupTest() {
 	instance = nil
 	moveSettleTimeout = 100 * time.Millisecond //keep the failure tests brisk
 	suite.tickCh = make(chan time.Time)
-	suite.fake = &fakePlatform{canMove: true}
+	suite.fake = &fakePlatform{canMove: true, trusted: true}
 }
 
 //newMover returns a started mover wired to the fake platform.
@@ -210,6 +218,35 @@ func (suite *TestMover) TestMoveIsNotJudgedTooEarly() {
 	assert.Equal(t, 0, mouseMover.state.getDidNotMoveCount(), "a delayed move is still a successful move")
 	assert.False(t, mouseMover.state.getLastMouseMovedTime().IsZero(), "move time should be set")
 	assert.Equal(t, 0, alerts, "no alert for a move that worked")
+}
+
+//TestUntrustedAlertsImmediately covers the case that actually bit in the field: the
+//Accessibility box still looked ticked, but the grant was pinned to an older build's
+//cdhash, so macOS refused. Waiting out ten failures before saying anything sent the user
+//looking in the wrong place for five minutes.
+func (suite *TestMover) TestUntrustedAlertsImmediately() {
+	t := suite.T()
+	suite.fake.trusted = false
+	mouseMover := suite.newMover(idleThreshold.Seconds()+1, false)
+
+	suite.tick(1)
+
+	_, alerts := suite.fake.counts()
+	assert.Equal(t, 1, mouseMover.state.getDidNotMoveCount(), "one failure so far")
+	assert.Equal(t, 1, alerts, "should alert on the first failure when not trusted")
+}
+
+//TestTrustedStillWaitsForThreshold keeps the original behaviour when permission is fine
+//and the move failed for some other reason.
+func (suite *TestMover) TestTrustedStillWaitsForThreshold() {
+	t := suite.T()
+	mouseMover := suite.newMover(idleThreshold.Seconds()+1, false)
+
+	suite.tick(failuresBeforeAlert - 1)
+
+	_, alerts := suite.fake.counts()
+	assert.Equal(t, failuresBeforeAlert-1, mouseMover.state.getDidNotMoveCount(), "just below the threshold")
+	assert.Equal(t, 0, alerts, "no alert before the threshold when trusted")
 }
 
 //TestAlertThrottle guards the 24-hour alert window. It used to compare against

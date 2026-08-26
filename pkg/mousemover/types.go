@@ -17,6 +17,7 @@ type MouseMover struct {
 //platform is everything the engine needs from macOS. internal/mac implements it for
 //real; tests substitute a fake, which keeps them free of cgo and of the actual cursor.
 type platform interface {
+	AccessibilityTrusted() bool
 	IdleSeconds() float64
 	MousePos() (int, int)
 	MoveMouse(x, y int)

@@ -4,7 +4,7 @@ package mac
 
 /*
 #cgo darwin CFLAGS: -x objective-c
-#cgo darwin LDFLAGS: -framework CoreFoundation -framework CoreGraphics
+#cgo darwin LDFLAGS: -framework ApplicationServices -framework CoreFoundation -framework CoreGraphics
 #include <stdlib.h>
 #include "mac.h"
 */
@@ -15,6 +15,11 @@ import "unsafe"
 //API is the real macOS implementation. The engine takes it as an interface so tests
 //can substitute a fake and run without cgo or a real mouse.
 type API struct{}
+
+//AccessibilityTrusted reports whether macOS lets this process post input events.
+func (API) AccessibilityTrusted() bool {
+	return C.amm_accessibility_trusted() != 0
+}
 
 //IdleSeconds reports how long it has been since the last user input event.
 func (API) IdleSeconds() float64 {

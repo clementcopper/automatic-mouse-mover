@@ -59,6 +59,25 @@ menu. Both turned out to be a handful of lines of CoreGraphics and AppKit, now i
   PNG showed all 218 palette entries but index 0 are exactly `RGB(0,0,0)`, index 0 being
   fully transparent white, with the 217 alpha values just anti-aliasing. The measurement
   turned the job into one line. Measure the asset before designing around it.
+- **A ticked Accessibility box can still be a denied one.** TCC pins the grant to a code
+  signing requirement, and for an ad-hoc signed app that requirement is the binary's
+  cdhash — so every rebuild invalidates it while System Settings keeps showing the app as
+  allowed. Diagnose it, don't guess:
+
+  ```sh
+  sqlite3 /Library/Application\ Support/com.apple.TCC/TCC.db \
+    "select hex(csreq) from access where service='kTCCServiceAccessibility' and client='com.pg.amm';" \
+    | xxd -r -p > /tmp/amm.csreq
+  csreq -r /tmp/amm.csreq -t                          # prints cdhash H"..."
+  codesign --verify -R /tmp/amm.csreq /Applications/amm.app
+  ```
+
+  The fix for the user is to remove the entry with the minus button and add it again;
+  toggling the checkbox does not refresh the stored requirement. A Developer ID signature
+  would pin the team identifier instead and survive rebuilds.
+- **Ask `AXIsProcessTrusted()` instead of inferring permission from failed moves.** The
+  app used to wait out ten failures over five minutes and then blame the mouse. It now
+  says what is actually wrong on the first failure.
 - **`[menu setAutoenablesItems:NO]` is load-bearing.** Otherwise AppKit re-decides each
   item's enabled state at menu-display time via `validateMenuItem:` and overrides
   `setEnabled:`.
