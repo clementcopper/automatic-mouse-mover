@@ -53,7 +53,8 @@ menu. Both turned out to be a handful of lines of CoreGraphics and AppKit, now i
   beats a second white asset plus an appearance observer on two counts a manual switch
   gets wrong: the menu bar tinted dark by the wallpaper while `AppleInterfaceStyle` still
   reports "light", and the open-menu state where the icon must invert against the blue
-  highlight. Any replacement icon has to stay pure black plus alpha.
+  highlight. Any replacement icon has to stay pure black plus alpha. Confirmed by eye on
+  2026-08-26: the cloud follows a light/dark switch live, without restarting the app.
 - **I claimed the icon was coloured instead of measuring it, and planned a second asset
   plus a switching mechanism off that.** Reading `PLTE` and `tRNS` straight out of the
   PNG showed all 218 palette entries but index 0 are exactly `RGB(0,0,0)`, index 0 being
@@ -83,7 +84,8 @@ menu. Both turned out to be a handful of lines of CoreGraphics and AppKit, now i
   `setEnabled:`.
 - **A programmatic `isEnabled` read-back cannot verify that.** It returns the stored
   value, and the auto-enable pass only runs when a human opens the menu — the
-  counter-test without the guard looked identical. Greying out is a hand check, full stop.
+  counter-test without the guard looked identical. Greying out is a hand check, full
+  stop — confirmed by eye on 2026-08-26, Start and Stop grey each other out correctly.
 - **AppKit calls must be marshalled to the main thread** (`runOnMain` in `menubar.m`),
   and `runtime.LockOSThread()` belongs in `init()` so `[NSApp run]` gets thread 0.
 - **`[NSApp stop:]` needs a following event** or the run loop keeps blocking; post a
