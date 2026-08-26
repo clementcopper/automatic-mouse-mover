@@ -10,7 +10,7 @@ import (
 
 //version must be kept in sync with CFBundleShortVersionString in appInfo/Info.plist
 //and with the release tag.
-const version = "1.3.0"
+const version = "1.4.0"
 
 func main() {
 	mac.Run(onReady, onExit)
