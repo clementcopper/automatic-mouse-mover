@@ -9,14 +9,22 @@ on:
 jobs:
 
   build:
-    runs-on: macos-12
+    runs-on: macos-15
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v3
+      uses: actions/setup-go@v5
       with:
-        go-version: 1.21
+        go-version: '1.25'
+
+    - name: Vet
+      run: go vet ./...
 
     - name: Test
-      run: go test -v ./...
+      run: go test -race -v ./...
+
+    # covers the universal binary path, which is where the macOS 15 SDK
+    # screen capture guard (issue #62) would break first
+    - name: Build app bundle
+      run: make build
