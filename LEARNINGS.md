@@ -37,6 +37,17 @@ menu. Both turned out to be a handful of lines of CoreGraphics and AppKit, now i
   keep working, which a `CGDisplayIsAsleep` guard would have broken. Lid-close sleep
   without an external display cannot be prevented by any user-space program — not even
   an `IOPMAssertion`, which only blocks *idle* sleep.
+- **The menu bar icon is a template image, and that is the whole dark-mode story.**
+  `[image setTemplate:YES]` makes AppKit tint the artwork from its alpha channel. It
+  beats a second white asset plus an appearance observer on two counts a manual switch
+  gets wrong: the menu bar tinted dark by the wallpaper while `AppleInterfaceStyle` still
+  reports "light", and the open-menu state where the icon must invert against the blue
+  highlight. Any replacement icon has to stay pure black plus alpha.
+- **I claimed the icon was coloured instead of measuring it, and planned a second asset
+  plus a switching mechanism off that.** Reading `PLTE` and `tRNS` straight out of the
+  PNG showed all 218 palette entries but index 0 are exactly `RGB(0,0,0)`, index 0 being
+  fully transparent white, with the 217 alpha values just anti-aliasing. The measurement
+  turned the job into one line. Measure the asset before designing around it.
 - **`[menu setAutoenablesItems:NO]` is load-bearing.** Otherwise AppKit re-decides each
   item's enabled state at menu-display time via `validateMenuItem:` and overrides
   `setEnabled:`.

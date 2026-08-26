@@ -62,7 +62,9 @@ Every AppKit call funnels through `runOnMain` — menu items are built from a go
 
 ### Icons
 
-`assets/icon/cloud.go` is a **generated** byte array (2goarray) — regenerate rather than hand-edit. It is the only icon; the picker was removed. The app bundle's own Finder icon is separate: `appInfo/icon.icns`, copied by the Makefile.
+`assets/icon/cloud.go` is a **generated** byte array (2goarray) — regenerate rather than hand-edit. It is the only icon; the picker was removed.
+
+The icon is set as a **template image** (`[image setTemplate:YES]` in `menubar.m`), so AppKit tints it: black on a light menu bar, white on a dark one, inverted while the menu is open, and correct when the bar picks up colour from the wallpaper. A replacement icon must therefore stay **pure black plus alpha** — anything coloured gets flattened to a silhouette. The app bundle's own Finder icon is separate: `appInfo/icon.icns`, copied by the Makefile.
 
 `Info.plist` sets `LSUIElement=true` — menu-bar-only, no dock icon. The version lives in two places that must be bumped together with the release tag: the `version` const in `cmd/main.go` and `CFBundleShortVersionString`/`CFBundleVersion` in `appInfo/Info.plist`.
 

@@ -68,6 +68,11 @@ void amm_menubar_set_icon(const void *data, int len) {
 		if (image == nil) {
 			return;
 		}
+		// The artwork is pure black plus an alpha ramp, so AppKit can tint it itself:
+		// black on a light menu bar, white on a dark one, inverted while the menu is
+		// open, and correct when the bar picks up colour from the wallpaper. A
+		// coloured replacement icon would be flattened to a silhouette by this.
+		[image setTemplate:YES];
 		[image setSize:NSMakeSize(16, 16)];
 		gStatusItem.button.image = image;
 		gStatusItem.button.imagePosition = NSImageOnly;
