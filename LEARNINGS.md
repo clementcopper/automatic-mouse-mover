@@ -112,10 +112,15 @@ Two lessons worth keeping:
 
 ## Build
 
-- Cross-compiling cgo `darwin/arm64` from an Intel Mac works with plain Xcode:
-  `CGO_ENABLED=1 GOARCH=arm64 CGO_CFLAGS="-arch arm64" CGO_LDFLAGS="-arch arm64"`.
-  `make build` does both arches plus `lipo` and prints `lipo -archs`, so the result is
-  verified rather than assumed.
+- Cross-compiling cgo works in **both** directions with plain Command Line Tools, no
+  full Xcode: `CGO_ENABLED=1 GOARCH=arm64 CGO_CFLAGS="-arch arm64" CGO_LDFLAGS="-arch arm64"`
+  and the x86_64 equivalent. Confirmed on an Intel host and on an M2. `make build` does
+  both arches plus `lipo` and prints `lipo -archs`, so the result is verified rather than
+  assumed.
+- **A binary's `minos` is the build host's macOS version**, since no minimum deployment
+  target is set. A bundle built on a newer Mac will not run on an older one — check with
+  `otool -l <binary> | grep -A3 LC_BUILD_VERSION`. Build releases on the oldest system
+  you intend to support, or set `-mmacosx-version-min`.
 - **Ad-hoc sign the bundle, not just the binary.** Apple Silicon refuses to run unsigned
   arm64 code. The Go linker already signs the arm64 slice (`adhoc, linker-signed`) and
   `lipo` preserves it, but the surrounding `.app` stays unsigned — and the bundle is what
