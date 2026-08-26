@@ -23,7 +23,7 @@ go test -v -run 'TestSuite/TestMouseMoveFailure' ./pkg/mousemover/   # single te
 
 Tests use a testify **suite**, so a single test is addressed as `TestSuite/<Name>`, not by its bare name.
 
-Needs Go 1.25+. CI (`.github/workflows/go.yml`) runs on `macos-15`: vet, `go test -race`, then `make build`.
+Needs Go 1.21+. CI (`.github/workflows/go.yml`) runs on `macos-15`: vet, `go test -race`, then `make build`.
 
 The build sets no `-mmacosx-version-min`, so the binary targets the build host's macOS version. That used to be mandatory because of robotgo; with robotgo gone a minimum target could be set again. See LEARNINGS.md.
 
