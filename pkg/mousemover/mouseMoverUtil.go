@@ -33,12 +33,26 @@ func getLogger(m *MouseMover, doWriteToFile bool, filename string) *slog.Logger 
 // moveAndCheck nudges the cursor and reports whether it actually moved. An unchanged
 // position means macOS swallowed the event, which is what happens when AMM has not been
 // granted Accessibility permission.
+//
+//CGEventPost is asynchronous: the cursor position does not update until the event has
+//been delivered, so reading it straight back reports every single move as failed. Poll
+//instead, which returns as soon as the move lands and only spends the full budget when
+//the move really was swallowed.
 func moveAndCheck(p platform, movePixel int) bool {
 	currentX, currentY := p.MousePos()
 	p.MoveMouse(currentX+movePixel, currentY+movePixel)
 
-	movedX, movedY := p.MousePos()
-	return movedX != currentX || movedY != currentY
+	deadline := time.Now().Add(moveSettleTimeout)
+	for {
+		movedX, movedY := p.MousePos()
+		if movedX != currentX || movedY != currentY {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(moveSettleInterval)
+	}
 }
 
 // getters and setters for state variable

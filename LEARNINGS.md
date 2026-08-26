@@ -32,6 +32,17 @@ menu. Both turned out to be a handful of lines of CoreGraphics and AppKit, now i
   timer** — that is the whole wake-keeping mechanism. `CGWarpMouseCursorPosition` would
   move the pointer without resetting it and would silently break the app. Verified
   empirically: idle went from 644 s to 0.03 s across one self-posted move.
+- **`CGEventPost` is asynchronous, and reading the cursor back immediately is a bug.**
+  `moveAndCheck` read the position straight after posting the move and reported **20 out
+  of 20 moves as failed** on real hardware, driving `didNotMoveCount` to the alert
+  threshold while the mouse was in fact moving fine. Because `movePixel` only flips sign
+  on success, the cursor also drifted in one direction instead of oscillating. Poll the
+  position until it changes, with a deadline. Measured failure rate by pause length:
+  0 ms → 20/20, 1 ms → 1/20, 5 ms → 1/20, 20 ms → 0/20.
+- **I verified the move with a 50 ms sleep in the throwaway test and shipped the check
+  without one.** The scratch program proved the mechanism, not the code. If a probe needs
+  a sleep to pass, the production path needs the same wait — or the probe is testing
+  something the code does not do.
 - **No sleep detection on purpose.** A sleeping Mac runs no goroutines, so the case
   handles itself; and in clamshell mode (external power + display) AMM is supposed to
   keep working, which a `CGDisplayIsAsleep` guard would have broken. Lid-close sleep

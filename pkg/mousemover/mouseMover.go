@@ -17,10 +17,16 @@ const (
 	idleThreshold = 60 * time.Second
 	//how many failed moves before the accessibility alert is shown
 	failuresBeforeAlert = 10
+	//how often the cursor position is re-read while waiting for a move to land
+	moveSettleInterval = 10 * time.Millisecond
 
 	logDir      = "log"
 	logFileName = "logFile-amm-5"
 )
+
+//how long to wait for a posted mouse event to take effect before calling it a failure.
+//A var, not a const, so tests do not have to sit out the real budget.
+var moveSettleTimeout = 200 * time.Millisecond
 
 // Start the main app
 func (m *MouseMover) Start() {

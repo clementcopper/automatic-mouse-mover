@@ -19,6 +19,9 @@ type fakePlatform struct {
 	//canMove false simulates a missing Accessibility permission: the position never
 	//changes, which is exactly how macOS behaves when it drops the event.
 	canMove bool
+	//moveDelay reproduces the real CGEventPost behaviour: the position only updates
+	//after the event has been delivered, not while MoveMouse is still running.
+	moveDelay time.Duration
 
 	x, y       int
 	moveCount  int
@@ -39,11 +42,24 @@ func (f *fakePlatform) MousePos() (int, int) {
 
 func (f *fakePlatform) MoveMouse(x, y int) {
 	f.mutex.Lock()
-	defer f.mutex.Unlock()
 	f.moveCount++
-	if f.canMove {
-		f.x, f.y = x, y
+	canMove, delay := f.canMove, f.moveDelay
+	f.mutex.Unlock()
+
+	if !canMove {
+		return
 	}
+	if delay == 0 {
+		f.mutex.Lock()
+		f.x, f.y = x, y
+		f.mutex.Unlock()
+		return
+	}
+	time.AfterFunc(delay, func() {
+		f.mutex.Lock()
+		f.x, f.y = x, y
+		f.mutex.Unlock()
+	})
 }
 
 func (f *fakePlatform) Alert(title, msg string) {
@@ -71,6 +87,7 @@ func TestSuite(t *testing.T) {
 // Run once before each test
 func (suite *TestMover) SetupTest() {
 	instance = nil
+	moveSettleTimeout = 100 * time.Millisecond //keep the failure tests brisk
 	suite.tickCh = make(chan time.Time)
 	suite.fake = &fakePlatform{canMove: true}
 }
@@ -95,7 +112,7 @@ func (suite *TestMover) tick(n int) {
 	for i := 0; i < n; i++ {
 		suite.tickCh <- time.Now()
 	}
-	time.Sleep(time.Millisecond * 100)
+	time.Sleep(time.Millisecond * 300)
 }
 
 func (suite *TestMover) TestAppStart() {
@@ -176,6 +193,23 @@ func (suite *TestMover) TestMouseMoveFailure() {
 	assert.True(t, mouseMover.state.getLastMouseMovedTime().IsZero(), "should stay default")
 	assert.Equal(t, 1, mouseMover.state.getDidNotMoveCount(), "should have counted a failure")
 	assert.False(t, mouseMover.state.getLastErrorTime().IsZero(), "error time should be set")
+}
+
+//TestMoveIsNotJudgedTooEarly guards the CGEventPost race. The cursor position only
+//updates once the posted event has been delivered, so reading it back immediately
+//reported every move as failed - which drove didNotMoveCount to the alert threshold
+//while the mouse was in fact moving perfectly well.
+func (suite *TestMover) TestMoveIsNotJudgedTooEarly() {
+	t := suite.T()
+	suite.fake.moveDelay = 40 * time.Millisecond
+	mouseMover := suite.newMover(idleThreshold.Seconds()+1, true)
+
+	suite.tick(1)
+
+	_, alerts := suite.fake.counts()
+	assert.Equal(t, 0, mouseMover.state.getDidNotMoveCount(), "a delayed move is still a successful move")
+	assert.False(t, mouseMover.state.getLastMouseMovedTime().IsZero(), "move time should be set")
+	assert.Equal(t, 0, alerts, "no alert for a move that worked")
 }
 
 //TestAlertThrottle guards the 24-hour alert window. It used to compare against
