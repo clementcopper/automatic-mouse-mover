@@ -162,6 +162,9 @@ Two lessons worth keeping:
 - `iconutil` wants exactly ten files named `icon_16x16.png` … `icon_512x512@2x.png`; any
   other name and it refuses the folder with "Failed to generate ICNS".
 
+- **Verified on both architectures as of 2026-08-27**: Intel (macOS 13.7.8) and M2
+  (macOS 26). The cursor moves on schedule and Teams stays active rather than going idle,
+  which is the whole point of the app.
 - Cross-compiling cgo works in **both** directions with plain Command Line Tools, no
   full Xcode: `CGO_ENABLED=1 GOARCH=arm64 CGO_CFLAGS="-arch arm64" CGO_LDFLAGS="-arch arm64"`
   and the x86_64 equivalent. Confirmed on an Intel host and on an M2. `make build` does
