@@ -27,6 +27,15 @@ menu. Both turned out to be a handful of lines of CoreGraphics and AppKit, now i
 
 ## macOS
 
+- **Ad-hoc signing gets you onto Apple Silicon, but not past Gatekeeper.** A downloaded
+  build is quarantined, and without notarisation macOS 15+ refuses it with *"Apple could
+  not verify … is free of malware"*. `spctl -a -vv` says `rejected` even on a bundle whose
+  signature verifies cleanly per architecture. `xattr -cr` does clear it — measured: 9
+  quarantined files inside the bundle, 0 afterwards, signature still valid — but only if
+  it runs **before** the first launch. Right-click → Open stopped working as a bypass in
+  macOS 15; the GUI route is now System Settings → Privacy & Security → *Open Anyway*.
+  Install instructions written for the terminal alone will fail for anyone using Finder.
+
 - **A Finder-launched app has no stderr, so slog's default handler writes into nothing.**
   Verified: `log show --predicate 'process == "amm"'` returned nothing at all. Unified
   logging through `os_log` is the only place the app's own output can be read back.
