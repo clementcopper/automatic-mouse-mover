@@ -122,6 +122,14 @@ Two lessons worth keeping:
 
 ## Build
 
+- **Nothing on a stock Mac rasterises SVG for icon work — except AppKit.** `sips` cannot
+  open an SVG at all (it prints the paths and writes nothing), and rsvg-convert, inkscape
+  and cairosvg are not installed. `NSImage initWithData:` reads SVG on macOS 13 and gives
+  back `_NSSVGImageRep`, so `tools/mkicons` draws through `NSBitmapImageRep` instead of
+  pulling in a converter. Verified end to end: `#1d6fe0` in, `(29,111,224,255)` out.
+- `iconutil` wants exactly ten files named `icon_16x16.png` … `icon_512x512@2x.png`; any
+  other name and it refuses the folder with "Failed to generate ICNS".
+
 - Cross-compiling cgo works in **both** directions with plain Command Line Tools, no
   full Xcode: `CGO_ENABLED=1 GOARCH=arm64 CGO_CFLAGS="-arch arm64" CGO_LDFLAGS="-arch arm64"`
   and the x86_64 equivalent. Confirmed on an Intel host and on an M2. `make build` does

@@ -54,4 +54,10 @@ $(COVER_PROFILE):
 vet:
 	go vet ./...
 
-.PHONY: all build open clean start test coverage vet
+# Rasterises appInfo/icon.svg into appInfo/icon.icns, and checks that the menu bar
+# artwork is pure black plus alpha. Deliberately not a dependency of build: that would
+# demand an SVG on every build and re-rasterise each time.
+icons:
+	go run ./tools/mkicons
+
+.PHONY: all build open clean start test coverage vet icons

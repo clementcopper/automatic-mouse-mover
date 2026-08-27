@@ -87,9 +87,17 @@ It has to be **pure black plus an alpha channel**. AppKit tints the icon from th
 and throws the colour away, so anything coloured collapses into a silhouette. SVG stays
 sharp at any scale; for PNG, 32x32 matches the 16pt icon on a Retina display exactly.
 
-The app's Finder icon is a separate file, `appInfo/icon.icns`, and that one may be in
-colour. Build it from an `.iconset` folder holding `icon_16x16.png` through
-`icon_512x512@2x.png`, then `iconutil -c icns amm.iconset`.
+The app's Finder icon is a separate file and that one may be in colour. Draw it as
+`appInfo/icon.svg` and run:
+
+```bash
+make icons
+```
+
+That rasterises the SVG into all ten sizes `iconutil` expects and writes
+`appInfo/icon.icns`. It also checks the menu bar artwork and warns if it carries colour.
+So one SVG per icon is all you need to draw — nothing else has to be installed, because
+the rasterising is done by AppKit itself (`sips` cannot read SVG).
 
 ## How it works
 

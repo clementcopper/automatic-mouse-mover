@@ -16,6 +16,7 @@ make           # build, then `open ./bin`
 make start     # go run cmd/main.go — runs the tray app directly
 make clean     # rm -rf ./bin
 make vet       # go vet ./...
+make icons     # appInfo/icon.svg -> icon.icns, and checks the tray artwork
 make coverage  # go test -race -coverprofile, then HTML report at cover.html
 go test -race -v ./...                                              # what CI runs
 go test -v -run 'TestSuite/TestMouseMoveFailure' ./pkg/mousemover/   # single test
@@ -70,9 +71,13 @@ must stay **pure black plus alpha**: it is drawn as a template image
 discards colour.
 
 The app bundle's Finder icon is separate and may be in colour: `appInfo/icon.icns`,
-copied by the Makefile. Build it from an `.iconset` folder with the ten standard sizes
-and `iconutil -c icns`. The current one holds only a 512px representation, so macOS
-downscales it for every smaller slot.
+copied by the Makefile. `make icons` builds it from `appInfo/icon.svg` — `tools/mkicons`
+rasterises through `NSImage`, because nothing on a stock Mac does it otherwise (`sips`
+cannot open an SVG, `iconutil` only reads PNG). The same command warns when the tray
+artwork has colour in it. It is deliberately not a dependency of `build`.
+
+The `icon.icns` currently checked in holds only a 512px representation, so macOS
+downscales it for every smaller slot; running `make icons` over a real SVG fixes that.
 
 `Info.plist` sets `LSUIElement=true` — menu-bar-only, no dock icon. The version lives in
 two places that must be bumped together with the release tag: the `version` const in
