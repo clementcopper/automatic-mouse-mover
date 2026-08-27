@@ -6,7 +6,7 @@ import (
 
 	"github.com/clementcopper/automatic-mouse-mover/assets/icon"
 	"github.com/clementcopper/automatic-mouse-mover/internal/mac"
-	"github.com/clementcopper/automatic-mouse-mover/pkg/mousemover"
+	"github.com/clementcopper/automatic-mouse-mover/internal/mousemover"
 )
 
 // version must be kept in sync with CFBundleShortVersionString in appInfo/Info.plist
@@ -23,6 +23,10 @@ const prefResumeAfterWake = "ResumeAfterWake"
 var wantRunning atomic.Bool
 
 func main() {
+	//Route the package-level logger into unified logging too - launched from Finder the
+	//app has no stderr, so the default handler would drop everything.
+	slog.SetDefault(slog.New(mac.NewLogHandler(slog.LevelInfo)))
+
 	mac.Run(onReady, onExit)
 }
 

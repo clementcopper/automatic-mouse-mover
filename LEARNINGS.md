@@ -27,6 +27,15 @@ menu. Both turned out to be a handful of lines of CoreGraphics and AppKit, now i
 
 ## macOS
 
+- **A Finder-launched app has no stderr, so slog's default handler writes into nothing.**
+  Verified: `log show --predicate 'process == "amm"'` returned nothing at all. Unified
+  logging through `os_log` is the only place the app's own output can be read back.
+- **Map slog `Info` to `OS_LOG_TYPE_DEFAULT`, never `OS_LOG_TYPE_INFO`.** macOS does not
+  retain `INFO` unless logging is explicitly turned up for the subsystem. The first
+  version of the handler used it and only `Error` records ever showed — the exact blind
+  spot the handler was written to remove. `DEFAULT` is persisted and needs no flag.
+- **`os_log` redacts `%s` as `<private>`.** The format has to be `%{public}s`.
+
 - **`CGEventPost` vs. warping the cursor.** `CGEventCreateMouseEvent` +
   `CGEventPost(kCGHIDEventTap, …)` posts a real HID event and **resets the system idle
   timer** — that is the whole wake-keeping mechanism. `CGWarpMouseCursorPosition` would
@@ -122,6 +131,14 @@ Two lessons worth keeping:
 
 ## Build
 
+- **`-s -w` costs nothing and saves 36%.** 3.37 MB → 2.15 MB per architecture. Panic
+  traces are byte-for-byte identical with and without it — checked against a deliberately
+  panicking program — because Go resolves them through its own `pclntab`, not the Mach-O
+  symbol table that `-s` strips.
+- **`-mmacosx-version-min` is now wanted, not forbidden.** It only had to stay out while
+  robotgo switched its screen capture backend on it. Pinned at 13.0, a bundle built on a
+  newer Mac still runs on Ventura.
+
 - **Nothing on a stock Mac rasterises SVG for icon work — except AppKit.** `sips` cannot
   open an SVG at all (it prints the paths and writes nothing), and rsvg-convert, inkscape
   and cairosvg are not installed. `NSImage initWithData:` reads SVG on macOS 13 and gives
@@ -152,7 +169,20 @@ Two lessons worth keeping:
 
 ## Testing
 
-- The `platform` interface in `pkg/mousemover/types.go` is the only test seam. Tests
+- **A package-level var that tests reassign is a data race.** Silencing the logger through
+  `var newLogger = func(...)` looked harmless, but `SetupTest` writes it while a previous
+  test's still-running loop goroutine reads it — the race detector caught it immediately,
+  and the symptom was an unrelated-looking assertion failure. Per-instance field set
+  before `run()` starts instead; goroutine creation gives the happens-before.
+- **Tests wrote into unified logging.** Once the default handler became os_log, every run
+  filled the system log with invented "Mouse pointer cannot be moved" errors that look
+  exactly like real ones. Verified fixed by streaming the subsystem during a test run: 0
+  records.
+- **A fixed `time.Sleep` waiting for a goroutine to start is a latent flake.** Under
+  `-race` the loop began after the 100 ms window and flipped `isRunning` back to true
+  after the test had cleared it. Poll for the state with a deadline instead.
+
+- The `platform` interface in `internal/mousemover/types.go` is the only test seam. Tests
   substitute `fakePlatform` and drive `run()` with their own tick channel, so they touch
   no cgo, no cursor and pop no dialog.
 - **The 24-hour alert throttle was dead code for years.** It compared against

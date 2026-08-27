@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags: [ "v*" ]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+
+    - name: Test
+      run: go test -race ./...
+
+    # The Makefile pins -mmacosx-version-min=13.0, so an artefact built on macos-15
+    # still runs on Ventura.
+    - name: Build universal bundle
+      run: make build
+
+    - name: Check both architectures are present
+      run: |
+        archs=$(lipo -archs ./bin/amm.app/Contents/MacOS/amm)
+        echo "$archs"
+        [[ "$archs" == *x86_64* && "$archs" == *arm64* ]] || exit 1
+        codesign --verify --verbose=2 ./bin/amm.app
+
+    # ditto rather than zip: it preserves the ad-hoc signature.
+    - name: Package
+      run: |
+        version="${GITHUB_REF_NAME#v}"
+        ditto -c -k --keepParent ./bin/amm.app "amm-${version}-universal.zip"
+        ls -l "amm-${version}-universal.zip"
+
+    # gh is preinstalled on the runners, so no third-party action is needed.
+    - name: Attach to the release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        version="${GITHUB_REF_NAME#v}"
+        gh release upload "$GITHUB_REF_NAME" "amm-${version}-universal.zip" --clobber \
+          || gh release create "$GITHUB_REF_NAME" "amm-${version}-universal.zip" \
+               --title "$GITHUB_REF_NAME" --generate-notes

@@ -1,6 +1,7 @@
 package mousemover
 
 import (
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -10,8 +11,11 @@ import (
 type MouseMover struct {
 	quit chan struct{}
 	//kick asks the loop to check right now instead of waiting for the next tick
-	kick     chan struct{}
-	logFile  *os.File
+	kick    chan struct{}
+	logFile *os.File
+	//logger overrides the default for one instance. Tests set it to keep invented
+	//failures out of the system log; nil means the unified-logging default.
+	logger   *slog.Logger
 	state    *state
 	platform platform
 }

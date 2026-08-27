@@ -4,30 +4,34 @@ import (
 	"log/slog"
 	"os"
 	"time"
+
+	"github.com/clementcopper/automatic-mouse-mover/internal/mac"
 )
 
-// getLogger returns the logger for one run. Writing to a file is off by default and
-// only meant for debugging; a file that cannot be opened downgrades to stderr rather
-// than killing the app.
+// getLogger returns the logger for one run. By default it writes into unified logging,
+// which is the only place a Finder-launched app's output can be read. Writing to a file
+// is a debugging switch; a file that cannot be opened falls back rather than killing the
+// app.
 func getLogger(m *MouseMover, doWriteToFile bool, filename string) *slog.Logger {
-	out := os.Stderr
-
-	if doWriteToFile {
-		if err := os.MkdirAll(logDir, os.ModePerm); err != nil {
-			slog.Error("could not create log dir, logging to stderr", "dir", logDir, "err", err)
-			return slog.New(slog.NewTextHandler(out, nil))
-		}
-
-		logFile, err := os.OpenFile(logDir+"/"+filename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-		if err != nil {
-			slog.Error("could not open log file, logging to stderr", "file", filename, "err", err)
-			return slog.New(slog.NewTextHandler(out, nil))
-		}
-		m.logFile = logFile
-		out = logFile
+	//Default goes to unified logging: a Finder-launched app has no stderr, so a plain
+	//text handler would write into nothing.
+	if !doWriteToFile {
+		return slog.New(mac.NewLogHandler(slog.LevelInfo))
 	}
 
-	return slog.New(slog.NewTextHandler(out, nil))
+	if err := os.MkdirAll(logDir, os.ModePerm); err != nil {
+		slog.Error("could not create log dir, logging to the system log", "dir", logDir, "err", err)
+		return slog.New(mac.NewLogHandler(slog.LevelInfo))
+	}
+
+	logFile, err := os.OpenFile(logDir+"/"+filename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		slog.Error("could not open log file, logging to the system log", "file", filename, "err", err)
+		return slog.New(mac.NewLogHandler(slog.LevelInfo))
+	}
+	m.logFile = logFile
+
+	return slog.New(slog.NewTextHandler(logFile, nil))
 }
 
 // moveAndCheck nudges the cursor and reports whether it actually moved. An unchanged

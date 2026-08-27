@@ -48,7 +48,11 @@ func (m *MouseMover) run(tick <-chan time.Time, stop func()) {
 		state := m.state
 		state.updateRunningStatus(true)
 
-		logger := getLogger(m, false, logFileName) //set writeToFile=true only for debugging
+		//Set by tests before run() starts, so the goroutine never races the assignment.
+		logger := m.logger
+		if logger == nil {
+			logger = getLogger(m, false, logFileName) //set writeToFile=true only for debugging
+		}
 		movePixel := 10
 
 		for {

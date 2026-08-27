@@ -19,22 +19,22 @@ make vet       # go vet ./...
 make icons     # appInfo/icon.svg -> icon.icns, and checks the tray artwork
 make coverage  # go test -race -coverprofile, then HTML report at cover.html
 go test -race -v ./...                                              # what CI runs
-go test -v -run 'TestSuite/TestMouseMoveFailure' ./pkg/mousemover/   # single test
+go test -v -run 'TestSuite/TestMouseMoveFailure' ./internal/mousemover/   # single test
 ```
 
 Tests use a testify **suite**, so a single test is addressed as `TestSuite/<Name>`, not by its bare name.
 
-Needs Go 1.21+. CI (`.github/workflows/go.yml`) runs on `macos-15`: vet, `go test -race`, then `make build`.
+Needs Go 1.21+. CI runs on `macos-15`: `go.yml` does vet, `go test -race` and `make build` on every push; `release.yml` fires on a `v*` tag, builds, packages with `ditto` and attaches the zip to the release.
 
-The build sets no `-mmacosx-version-min`, so the binary targets the build host's macOS version. That used to be mandatory because of robotgo; with robotgo gone a minimum target could be set again. See LEARNINGS.md.
+The build pins `-mmacosx-version-min=13.0` and `-ldflags="-s -w"` (see the `MIN_MACOS` and `LDFLAGS` variables). The deployment target keeps a bundle built on a newer Mac running on Ventura; the strip flags cut 36% and leave panic traces intact. See LEARNINGS.md.
 
 ## Architecture
 
 **Zero runtime dependencies.** `go.mod` requires only testify, and only for tests. Everything native lives in `internal/mac`.
 
 - `cmd/main.go` — builds the menu and drives `mousemover` through `Start()` / `Quit()`. Menu clicks are handled in a single `select` loop over each item's `ClickedCh`. No config, no persistence.
-- `internal/mac` — all cgo. `mac.go`/`mac.m` wrap CoreGraphics (idle time, cursor, alert); `menubar.go`/`menubar.m` wrap AppKit (`NSStatusItem`). Replaced robotgo, activity-tracker, mac-sleep-notifier and systray.
-- `pkg/mousemover` — the engine, no cgo. `GetInstance()` returns a package-level singleton.
+- `internal/mac` — all cgo. `mac.go`/`mac.m` wrap CoreGraphics (idle time, cursor, alert); `menubar.go`/`menubar.m` wrap AppKit (`NSStatusItem`); `system.*` cover the login item, preferences and the wake notification; `log.*` route slog into unified logging. Replaced robotgo, activity-tracker, mac-sleep-notifier and systray.
+- `internal/mousemover` — the engine, no cgo. `GetInstance()` returns a package-level singleton.
 
 ### The core loop (`mouseMover.go`)
 
@@ -53,7 +53,13 @@ There is **no sleep detection**. A sleeping Mac runs no goroutines, and in clams
 
 All of `state` sits behind an `sync.RWMutex` with getter/setter pairs in `mouseMoverUtil.go` — never touch the struct fields directly from the loop. The `platform` interface (`types.go`) is the test seam: `internal/mac.API` implements it for real, tests substitute `fakePlatform` and drive `run()` with their own tick channel, resetting the singleton with `instance = nil` in `SetupTest`. Tests therefore need no cgo, no cursor and pop no dialog.
 
-Logging is per-run via `getLogger(m, doWriteToFile, filename)` on `log/slog`; file output is off by default.
+Logging is per-run via `getLogger(m, doWriteToFile, filename)` on `log/slog`; file output is off by default. The default handler is `mac.NewLogHandler`, which writes into **unified logging** — a Finder-launched app has no stderr, so anything else is invisible. Read it back with:
+
+```bash
+log show --last 10m --predicate 'subsystem == "com.pg.amm"' --style compact
+```
+
+slog `Info` maps to `OS_LOG_TYPE_DEFAULT`, **not** `OS_LOG_TYPE_INFO`: macOS does not retain the latter unless logging is turned up for the subsystem, so info records would silently never appear.
 
 ### Menu bar (`internal/mac/menubar.m`)
 

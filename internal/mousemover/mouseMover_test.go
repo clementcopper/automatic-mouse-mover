@@ -1,6 +1,8 @@
 package mousemover
 
 import (
+	"io"
+	"log/slog"
 	"os"
 	"sync"
 	"testing"
@@ -110,8 +112,20 @@ func (suite *TestMover) newMover(idleSeconds float64, canMove bool) *MouseMover 
 	mouseMover.state = &state{}
 	mouseMover.quit = make(chan struct{})
 	mouseMover.kick = make(chan struct{}, 1)
+	//keep invented failures out of the system log
+	mouseMover.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	mouseMover.run(suite.tickCh, func() {})
-	time.Sleep(time.Millisecond * 100) //wait for the loop to start
+
+	//Wait for the loop to actually be running rather than guessing at a duration: under
+	//load the goroutine can start late, and a fixed sleep made the stopped-mover test
+	//flaky because run() flipped isRunning back to true after the test had cleared it.
+	deadline := time.Now().Add(2 * time.Second)
+	for !mouseMover.IsRunning() {
+		if time.Now().After(deadline) {
+			suite.T().Fatal("mover did not start")
+		}
+		time.Sleep(time.Millisecond)
+	}
 
 	return mouseMover
 }
@@ -270,7 +284,9 @@ func (suite *TestMover) TestCheckNowIsIgnoredWhenStopped() {
 	t := suite.T()
 	mouseMover := suite.newMover(idleThreshold.Seconds()+1, true)
 
-	mouseMover.state.updateRunningStatus(false)
+	//Quit rather than poking the flag: the send blocks until the loop actually receives
+	//it, so there is no window in which the loop is still live.
+	mouseMover.Quit()
 	mouseMover.CheckNow()
 	time.Sleep(time.Millisecond * 300)
 

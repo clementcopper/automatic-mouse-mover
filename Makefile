@@ -1,3 +1,6 @@
+MIN_MACOS=-mmacosx-version-min=13.0
+LDFLAGS=-s -w
+
 COVER_PROFILE=cover.out
 COVER_HTML=cover.html
 
@@ -8,20 +11,23 @@ all: open
 # Universal binary: build each arch on its own, then lipo them together, so one
 # .app runs natively on both Apple Silicon and Intel.
 #
-# No -mmacosx-version-min is set, so the binary targets whatever macOS the build host
-# runs. That was forced by robotgo's screen capture backend switch; robotgo is gone, so
-# a minimum deployment target could be set here again if older systems need supporting.
+# -mmacosx-version-min pins the deployment target so a binary built on a newer Mac still
+# runs on Ventura. It used to be forbidden here because robotgo switched its screen
+# capture backend on it; robotgo is gone.
+#
+# -s -w drops the symbol table and DWARF: 36% smaller, and panic traces are unaffected
+# because Go resolves them through its own pclntab.
 build: clean
 	mkdir -p -v ./bin/amm.app/Contents/Resources
 	mkdir -p -v ./bin/amm.app/Contents/MacOS
 	cp ./appInfo/*.plist ./bin/amm.app/Contents/Info.plist
 	cp ./appInfo/*.icns ./bin/amm.app/Contents/Resources/icon.icns
 	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
-		CGO_CFLAGS="-arch arm64" CGO_LDFLAGS="-arch arm64" \
-		go build -o ./bin/amm-arm64 cmd/main.go
+		CGO_CFLAGS="-arch arm64 $(MIN_MACOS)" CGO_LDFLAGS="-arch arm64 $(MIN_MACOS)" \
+		go build -ldflags="$(LDFLAGS)" -o ./bin/amm-arm64 cmd/main.go
 	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
-		CGO_CFLAGS="-arch x86_64" CGO_LDFLAGS="-arch x86_64" \
-		go build -o ./bin/amm-amd64 cmd/main.go
+		CGO_CFLAGS="-arch x86_64 $(MIN_MACOS)" CGO_LDFLAGS="-arch x86_64 $(MIN_MACOS)" \
+		go build -ldflags="$(LDFLAGS)" -o ./bin/amm-amd64 cmd/main.go
 	lipo -create -output ./bin/amm.app/Contents/MacOS/amm ./bin/amm-arm64 ./bin/amm-amd64
 	rm ./bin/amm-arm64 ./bin/amm-amd64
 # Ad-hoc sign the bundle. Apple Silicon refuses to run unsigned arm64 code, and while
