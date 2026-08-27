@@ -76,6 +76,11 @@ must stay **pure black plus alpha**: it is drawn as a template image
 (`[image setTemplate:YES]` in `menubar.m`), so AppKit tints it from the alpha and
 discards colour.
 
+It need not be square. `amm_menubar_set_icon` scales to `AMM_ICON_HEIGHT` (16 pt) and
+derives the width from the aspect ratio; the status item was created with
+`NSVariableStatusItemLength` and widens to match. Measured: a 1:1 mark gives a 32x22 pt
+item, 512x179 gives 62x22.
+
 The app bundle's Finder icon is separate and may be in colour: `appInfo/icon.icns`,
 copied by the Makefile. `make icons` builds it from `appInfo/icon.svg` — `tools/mkicons`
 rasterises through `NSImage`, because nothing on a stock Mac does it otherwise (`sips`

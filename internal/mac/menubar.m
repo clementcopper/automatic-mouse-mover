@@ -3,6 +3,9 @@
 #include "menubar.h"
 #include "_cgo_export.h"
 
+// Motif height in points. The menu bar is 22pt, so this leaves a little air.
+#define AMM_ICON_HEIGHT 16.0
+
 static NSStatusItem *gStatusItem = nil;
 static NSMenu *gMenu = nil;
 static int gNextItemID = 1;
@@ -73,7 +76,15 @@ void amm_menubar_set_icon(const void *data, int len) {
 		// open, and correct when the bar picks up colour from the wallpaper. A
 		// coloured replacement icon would be flattened to a silhouette by this.
 		[image setTemplate:YES];
-		[image setSize:NSMakeSize(16, 16)];
+
+		// Scale to a fixed height and let the width follow, so a wide mark is not
+		// squashed into a square. The status item was created with
+		// NSVariableStatusItemLength, so it widens to match; only the height is fixed,
+		// by the menu bar itself.
+		NSSize native = [image size];
+		CGFloat height = AMM_ICON_HEIGHT;
+		CGFloat width = (native.height > 0) ? native.width * height / native.height : height;
+		[image setSize:NSMakeSize(width, height)];
 		gStatusItem.button.image = image;
 		gStatusItem.button.imagePosition = NSImageOnly;
 	});

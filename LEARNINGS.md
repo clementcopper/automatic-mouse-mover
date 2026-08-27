@@ -96,6 +96,12 @@ menu. Both turned out to be a handful of lines of CoreGraphics and AppKit, now i
 - **A login item has to be registered again after every rebuild.** Same class as the TCC
   grant: *"If an app updates either the plist or the executable ... the SMAppService must
   be re-registered or it may not launch."*
+- **A menu bar icon does not have to be square** — that was our constraint, not the
+  system's. `setSize:NSMakeSize(16,16)` squashed a 64x32 source to 16x16. Scaling to a
+  fixed height with the width derived from the aspect ratio works because the status item
+  uses `NSVariableStatusItemLength`. Measured item sizes: 1:1 gives 32x22 pt, 2:1 gives
+  48x22, 512x179 gives 62x22. The menu bar itself is 22 pt
+  (`[[NSStatusBar systemStatusBar] thickness]`).
 - **`[menu setAutoenablesItems:NO]` is load-bearing.** Otherwise AppKit re-decides each
   item's enabled state at menu-display time via `validateMenuItem:` and overrides
   `setEnabled:`.

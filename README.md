@@ -85,7 +85,11 @@ exactly one `tray.*` file; there is no generator step.
 
 It has to be **pure black plus an alpha channel**. AppKit tints the icon from the alpha
 and throws the colour away, so anything coloured collapses into a silhouette. SVG stays
-sharp at any scale; for PNG, 32x32 matches the 16pt icon on a Retina display exactly.
+sharp at any scale; for PNG, draw it at twice the size it will be shown.
+
+**It does not have to be square.** The artwork is scaled to 16 pt tall and the width
+follows the aspect ratio, so a wide mark stays a wide mark — a 512x179 drawing ends up as
+a 62 pt wide item in a 22 pt menu bar. Only the height is fixed, by the menu bar itself.
 
 The app's Finder icon is a separate file and that one may be in colour. Draw it as
 `appInfo/icon.svg` and run:
