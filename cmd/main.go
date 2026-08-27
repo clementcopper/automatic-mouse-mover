@@ -11,7 +11,7 @@ import (
 
 // version must be kept in sync with CFBundleShortVersionString in appInfo/Info.plist
 // and with the release tag.
-const version = "1.5.0"
+const version = "1.6.0"
 
 // prefResumeAfterWake stores the "Resume After Wake" tick. The login item state is not
 // stored here - macOS owns that one and SMAppService reports it back.
