@@ -23,7 +23,19 @@ gets.
 ### From the release
 
 Download the latest `amm-*-universal.zip` from
-[Releases](https://github.com/clementcopper/automatic-mouse-mover/releases), then:
+[Releases](https://github.com/clementcopper/automatic-mouse-mover/releases).
+
+The app is ad-hoc signed but **not notarised**, so macOS blocks it on first launch with
+*"Apple could not verify amm.app is free of malware…"*. That is expected. Two ways past
+it — pick one.
+
+**Finder.** Drag `amm.app` into Applications, double-click it, dismiss the dialog, then
+open **System Settings → Privacy & Security**, scroll to the bottom and click **Open
+Anyway**. On macOS 15 and newer this is the only route through the GUI: right-click →
+Open no longer bypasses the check.
+
+**Terminal.** Clearing the quarantine attribute *before* the first launch avoids the
+dialog entirely:
 
 ```bash
 ditto -x -k ~/Downloads/amm-*-universal.zip ~/Downloads/
@@ -32,8 +44,7 @@ xattr -cr /Applications/amm.app
 open /Applications/amm.app
 ```
 
-The app is ad-hoc signed but not notarised, so macOS quarantines anything that arrived
-through a download. `xattr -cr` clears that.
+The order matters — once macOS has assessed the app, the dialog is what you get.
 
 ### From source
 
@@ -47,7 +58,8 @@ make build
 ```
 
 `make build` produces a universal `./bin/amm.app`, signs it ad-hoc and prints the
-architectures it contains. Drag it to `/Applications`.
+architectures it contains. Drag it to `/Applications`. A self-built app is never
+quarantined, so none of the Gatekeeper steps above apply.
 
 ## Granting permission
 
