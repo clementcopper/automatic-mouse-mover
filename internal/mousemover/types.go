@@ -9,7 +9,13 @@ import (
 
 // MouseMover is the main struct for the app
 type MouseMover struct {
-	quit chan struct{}
+	//mutex serialises Start, Quit and CheckNow. The menu loop is not the only caller -
+	//the wake callback runs on its own goroutine and drives the same three methods.
+	mutex sync.Mutex
+	quit  chan struct{}
+	//done is closed by the loop goroutine when it has stopped, so Quit can wait for it
+	//instead of assuming.
+	done chan struct{}
 	//kick asks the loop to check right now instead of waiting for the next tick
 	kick    chan struct{}
 	logFile *os.File
@@ -27,6 +33,8 @@ type platform interface {
 	IdleSeconds() float64
 	MousePos() (int, int)
 	MoveMouse(x, y int)
+	//Alert returns at once; the dialog is put up on the main thread and lives on
+	//without the caller.
 	Alert(title, msg string)
 }
 

@@ -30,12 +30,19 @@ var moveSettleTimeout = 200 * time.Millisecond
 
 // Start the main app
 func (m *MouseMover) Start() {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
 	if m.state.isRunning() {
 		return
 	}
 	m.state = &state{}
 	m.quit = make(chan struct{})
 	m.kick = make(chan struct{}, 1)
+	//Mark it running here, not inside the goroutine. The goroutine may not be scheduled
+	//before the next caller asks - and the wake callback is exactly such a caller - so
+	//flagging it late let two loops start, each with its own ticker.
+	m.state.updateRunningStatus(true)
 
 	ticker := time.NewTicker(checkInterval)
 	m.run(ticker.C, ticker.Stop)
@@ -44,7 +51,15 @@ func (m *MouseMover) Start() {
 // run drives the loop. The tick channel and stop function are parameters so tests can
 // drive it themselves instead of waiting on a real ticker.
 func (m *MouseMover) run(tick <-chan time.Time, stop func()) {
+	//A fresh one per run: the previous one is closed, and closing it twice panics.
+	m.done = make(chan struct{})
+	//Read the channels once. The loop must not keep reading the struct fields: Start
+	//replaces them, and a select re-evaluating them would race with that.
+	done, quit, kick := m.done, m.quit, m.kick
+
 	go func() {
+		defer close(done)
+
 		state := m.state
 		state.updateRunningStatus(true)
 
@@ -60,10 +75,10 @@ func (m *MouseMover) run(tick <-chan time.Time, stop func()) {
 			case <-tick:
 				m.checkAndMove(logger, state, &movePixel)
 
-			case <-m.kick:
+			case <-kick:
 				m.checkAndMove(logger, state, &movePixel)
 
-			case <-m.quit:
+			case <-quit:
 				logger.Info("stopping mouse mover")
 				state.updateRunningStatus(false)
 				stop()
@@ -131,7 +146,7 @@ func (m *MouseMover) reportFailedMove(logger *slog.Logger, state *state) {
 		if !trusted {
 			title = "Automatic Mouse Mover needs permission"
 		}
-		go m.platform.Alert(title, msg)
+		m.platform.Alert(title, msg)
 	}
 }
 
@@ -143,23 +158,52 @@ func (m *MouseMover) IsRunning() bool {
 // CheckNow asks the loop to look at the idle time immediately instead of waiting for the
 // next tick. Non-blocking: a pending kick is enough, a second one adds nothing.
 func (m *MouseMover) CheckNow() {
-	if m == nil || m.kick == nil || !m.state.isRunning() {
+	if m == nil {
+		return
+	}
+	m.mutex.Lock()
+	kick := m.kick
+	running := m.state.isRunning()
+	m.mutex.Unlock()
+
+	if kick == nil || !running {
 		return
 	}
 	select {
-	case m.kick <- struct{}{}:
+	case kick <- struct{}{}:
 	default:
 	}
 }
 
-// Quit the app
+// Quit stops the loop and waits for it to be gone. Safe to call twice.
 func (m *MouseMover) Quit() {
-	//making it idempotent
-	if m != nil && m.state.isRunning() {
-		m.quit <- struct{}{}
+	if m == nil {
+		return
+	}
+
+	m.mutex.Lock()
+	quit, done := m.quit, m.done
+	stopping := m.state.isRunning() && quit != nil
+	if stopping {
+		//Close rather than send. A send needs a receiver, so once the loop had gone
+		//away - which a double Start used to arrange - Quit blocked for ever, and with
+		//it the menu loop that called it: the app kept running with a dead menu.
+		select {
+		case <-quit:
+		default:
+			close(quit)
+		}
 	}
 	if m.logFile != nil {
 		m.logFile.Close()
+		m.logFile = nil
+	}
+	m.mutex.Unlock()
+
+	//Wait outside the lock, so the loop can still take it on its way out. done is only
+	//nil when the loop never ran.
+	if stopping && done != nil {
+		<-done
 	}
 }
 

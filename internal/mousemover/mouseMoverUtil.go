@@ -34,15 +34,28 @@ func getLogger(m *MouseMover, doWriteToFile bool, filename string) *slog.Logger 
 	return slog.New(slog.NewTextHandler(logFile, nil))
 }
 
-// moveAndCheck nudges the cursor and reports whether it actually moved. An unchanged
-// position means macOS swallowed the event, which is what happens when AMM has not been
-// granted Accessibility permission.
+// moveAndCheck nudges the cursor and reports whether it actually moved. Failing both
+// directions means macOS swallowed the event, which is what happens when AMM has not
+// been granted Accessibility permission.
+func moveAndCheck(p platform, movePixel int) bool {
+	if tryMove(p, movePixel) {
+		return true
+	}
+	//A cursor parked in a screen corner cannot go any further that way: macOS clamps
+	//the event to the edge and the position never changes, which looks exactly like a
+	//dropped event. The sign only flips after a success, so without this the mover
+	//stayed stuck in the corner for ever and eventually claimed the Accessibility
+	//permission was missing. Try the other way before believing that.
+	return tryMove(p, -movePixel)
+}
+
+// tryMove posts one move and waits to see whether it landed.
 //
 // CGEventPost is asynchronous: the cursor position does not update until the event has
 // been delivered, so reading it straight back reports every single move as failed. Poll
 // instead, which returns as soon as the move lands and only spends the full budget when
 // the move really was swallowed.
-func moveAndCheck(p platform, movePixel int) bool {
+func tryMove(p platform, movePixel int) bool {
 	currentX, currentY := p.MousePos()
 	p.MoveMouse(currentX+movePixel, currentY+movePixel)
 

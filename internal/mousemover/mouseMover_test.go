@@ -4,6 +4,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -23,6 +24,9 @@ type fakePlatform struct {
 	canMove bool
 	//trusted mirrors AXIsProcessTrusted
 	trusted bool
+	//clampNegative refuses to go past zero, the way macOS clamps a move at the edge of
+	//the screen: the event is accepted, the position simply does not change.
+	clampNegative bool
 	//moveDelay reproduces the real CGEventPost behaviour: the position only updates
 	//after the event has been delivered, not while MoveMouse is still running.
 	moveDelay time.Duration
@@ -57,6 +61,13 @@ func (f *fakePlatform) MoveMouse(x, y int) {
 	f.mutex.Unlock()
 
 	if !canMove {
+		return
+	}
+
+	f.mutex.Lock()
+	clamp := f.clampNegative
+	f.mutex.Unlock()
+	if clamp && (x < 0 || y < 0) {
 		return
 	}
 	if delay == 0 {
@@ -330,4 +341,110 @@ func (suite *TestMover) TestAlertThrottle() {
 	_, alerts = suite.fake.counts()
 	assert.Equal(t, 1, alerts, "alert should only fire once per 24 hours")
 	assert.Equal(t, firstAlertTime, mouseMover.state.getLastAlertTime(), "alert time should not move")
+}
+
+// startMover starts the mover through the public API, real ticker and all. The tick
+// interval never matters here - these tests are about Start and Quit themselves.
+func (suite *TestMover) startMover() *MouseMover {
+	mouseMover := GetInstance()
+	mouseMover.platform = suite.fake
+	mouseMover.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	mouseMover.Start()
+	return mouseMover
+}
+
+// waitForGoroutines polls instead of sleeping a fixed amount: a goroutine may take a
+// moment to be scheduled or to finish unwinding.
+func (suite *TestMover) waitForGoroutines(want int) int {
+	deadline := time.Now().Add(2 * time.Second)
+	got := runtime.NumGoroutine()
+	for got != want && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+		got = runtime.NumGoroutine()
+	}
+	return got
+}
+
+// TestDoubleStartRunsOneLoop covers the race between the menu loop and the wake
+// callback, which both call Start. isRunning used to be set inside the goroutine, so a
+// second Start that arrived before it was scheduled started a second loop with its own
+// ticker - and left it running for ever, because Quit only ever stops one.
+func (suite *TestMover) TestDoubleStartRunsOneLoop() {
+	t := suite.T()
+	suite.fake.idleSeconds = idleThreshold.Seconds() + 1
+	before := runtime.NumGoroutine()
+
+	mouseMover := suite.startMover()
+	mouseMover.Start()
+
+	assert.Equal(t, before+1, suite.waitForGoroutines(before+1), "a second Start must not start a second loop")
+
+	mouseMover.Quit()
+	assert.False(t, mouseMover.IsRunning(), "should be stopped")
+	assert.Equal(t, before, suite.waitForGoroutines(before), "Quit must leave no loop behind")
+}
+
+// TestQuitDoesNotBlockWithoutALoop is the hang the app was reported with: Quit sent on an
+// unbuffered channel, so with the running flag set but no loop listening it never
+// returned - and the menu loop that called it was stuck for good.
+func (suite *TestMover) TestQuitDoesNotBlockWithoutALoop() {
+	t := suite.T()
+	mouseMover := GetInstance()
+	mouseMover.platform = suite.fake
+	mouseMover.state = &state{}
+	mouseMover.quit = make(chan struct{})
+	mouseMover.state.updateRunningStatus(true) //no loop behind it
+
+	returned := make(chan struct{})
+	go func() {
+		mouseMover.Quit()
+		close(returned)
+	}()
+
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Quit blocked with no loop to receive it")
+	}
+}
+
+// TestRestartAfterQuit walks the Stop-then-wake path, which reuses the same instance.
+func (suite *TestMover) TestRestartAfterQuit() {
+	t := suite.T()
+	suite.fake.idleSeconds = idleThreshold.Seconds() + 1
+	before := runtime.NumGoroutine()
+
+	mouseMover := suite.startMover()
+	mouseMover.Quit()
+	mouseMover.Start()
+
+	assert.True(t, mouseMover.IsRunning(), "should be running again")
+	assert.Equal(t, before+1, suite.waitForGoroutines(before+1), "restart should leave exactly one loop")
+
+	mouseMover.Quit()
+	assert.Equal(t, before, suite.waitForGoroutines(before), "should be stopped again")
+}
+
+// TestClampedCursorTriesTheOtherDirection covers the cursor parked in a screen corner.
+// macOS clamps the move to the edge, so the position does not change and the move looks
+// dropped. The direction only flips after a success, so the mover kept pushing into the
+// same corner for ever and eventually blamed the Accessibility permission.
+func (suite *TestMover) TestClampedCursorTriesTheOtherDirection() {
+	t := suite.T()
+	fake := &fakePlatform{canMove: true, trusted: true, clampNegative: true}
+
+	assert.True(t, moveAndCheck(fake, -10), "a clamped move must be retried the other way")
+	x, _ := fake.MousePos()
+	assert.Equal(t, 10, x, "the retry should have moved away from the edge")
+}
+
+// TestDroppedEventStillFails keeps the retry from papering over a genuinely missing
+// permission.
+func (suite *TestMover) TestDroppedEventStillFails() {
+	t := suite.T()
+	fake := &fakePlatform{canMove: false, trusted: false}
+
+	assert.False(t, moveAndCheck(fake, 10), "a dropped event is still a failure")
+	moves, _ := fake.counts()
+	assert.Equal(t, 2, moves, "both directions should have been tried")
 }
