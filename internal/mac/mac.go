@@ -4,7 +4,7 @@ package mac
 
 /*
 #cgo darwin CFLAGS: -x objective-c
-#cgo darwin LDFLAGS: -framework ApplicationServices -framework CoreFoundation -framework CoreGraphics
+#cgo darwin LDFLAGS: -framework ApplicationServices -framework CoreFoundation -framework CoreGraphics -framework Cocoa
 #include <stdlib.h>
 #include "mac.h"
 */
@@ -38,7 +38,8 @@ func (API) MoveMouse(x, y int) {
 	C.amm_move_mouse(C.int(x), C.int(y))
 }
 
-// Alert shows a modal dialog and blocks until it is dismissed.
+// Alert puts up a dialog and returns at once. The dialog is shown on the main thread and
+// outlives the call, so nothing has to be parked while it is open.
 func (API) Alert(title, msg string) {
 	cTitle := C.CString(title)
 	defer C.free(unsafe.Pointer(cTitle))

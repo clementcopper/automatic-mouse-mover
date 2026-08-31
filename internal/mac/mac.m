@@ -1,3 +1,4 @@
+#import <Cocoa/Cocoa.h>
 #import <CoreFoundation/CoreFoundation.h>
 #import <ApplicationServices/ApplicationServices.h>
 #import <CoreGraphics/CoreGraphics.h>
@@ -50,17 +51,38 @@ void amm_move_mouse(int x, int y) {
 	CFRelease(move);
 }
 
-// Blocks until the user dismisses the dialog, so callers keep it off any loop they
-// still need to service.
+// Only one dialog at a time. Ten failed moves in a row must not stack ten alerts.
+static BOOL gAlertOnScreen = NO;
+
+// Returns immediately. The dialog is put up on the main thread and lives on without the
+// caller, so no goroutine is parked for as long as it stays open.
+//
+// This replaced CFUserNotificationDisplayAlert, which was called from a goroutine with a
+// timeout of 0.0 - never expires. It blocked that thread until someone clicked OK, and
+// since AMM is an accessory app that never comes forward on its own, the dialog could
+// sit behind everything and never be seen.
 void amm_alert(const char *title, const char *msg) {
-	CFStringRef cfTitle = CFStringCreateWithCString(NULL, title, kCFStringEncodingUTF8);
-	CFStringRef cfMsg = CFStringCreateWithCString(NULL, msg, kCFStringEncodingUTF8);
-	CFOptionFlags response;
+	NSString *alertTitle = [NSString stringWithUTF8String:title];
+	NSString *alertMsg = [NSString stringWithUTF8String:msg];
 
-	CFUserNotificationDisplayAlert(0.0, kCFUserNotificationNoteAlertLevel,
-	                               NULL, NULL, NULL, cfTitle, cfMsg,
-	                               CFSTR("OK"), NULL, NULL, &response);
+	// dispatch_async, not dispatch_sync: a synchronous hop onto the main thread from a
+	// goroutine is the deadlock that freezes the menu bar.
+	dispatch_async(dispatch_get_main_queue(), ^{
+		if (gAlertOnScreen) {
+			return;
+		}
+		gAlertOnScreen = YES;
 
-	if (cfTitle != NULL) CFRelease(cfTitle);
-	if (cfMsg != NULL) CFRelease(cfMsg);
+		NSAlert *alert = [[NSAlert alloc] init];
+		[alert setMessageText:alertTitle];
+		[alert setInformativeText:alertMsg];
+		[alert addButtonWithTitle:@"OK"];
+
+		// No dock icon means no automatic activation - without this the window opens
+		// behind whatever the user is looking at.
+		[NSApp activateIgnoringOtherApps:YES];
+		[alert runModal];
+
+		gAlertOnScreen = NO;
+	});
 }

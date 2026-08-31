@@ -2,7 +2,9 @@ package main
 
 import (
 	"log/slog"
+	"runtime"
 	"sync/atomic"
+	"syscall"
 
 	"github.com/clementcopper/automatic-mouse-mover/assets/icon"
 	"github.com/clementcopper/automatic-mouse-mover/internal/mac"
@@ -11,7 +13,7 @@ import (
 
 // version must be kept in sync with CFBundleShortVersionString in appInfo/Info.plist
 // and with the release tag.
-const version = "1.6.0"
+const version = "1.6.1"
 
 // prefResumeAfterWake stores the "Resume After Wake" tick. The login item state is not
 // stored here - macOS owns that one and SMAppService reports it back.
@@ -26,6 +28,14 @@ func main() {
 	//Route the package-level logger into unified logging too - launched from Finder the
 	//app has no stderr, so the default handler would drop everything.
 	slog.SetDefault(slog.New(mac.NewLogHandler(slog.LevelInfo)))
+
+	//Name the build in the log. A report from someone else's Mac is only worth anything
+	//if it says which version and which architecture was actually running.
+	osVersion, err := syscall.Sysctl("kern.osproductversion")
+	if err != nil {
+		osVersion = "unknown"
+	}
+	slog.Info("starting", "version", version, "arch", runtime.GOARCH, "macos", osVersion)
 
 	mac.Run(onReady, onExit)
 }
@@ -103,12 +113,12 @@ func onReady() {
 			if err := platform.SetLoginItem(enable); err != nil {
 				//Say why rather than leaving a tick that does nothing.
 				slog.Error("could not change the login item", "enable", enable, "err", err)
-				go platform.Alert("Launch at Login could not be changed", err.Error())
+				platform.Alert("Launch at Login could not be changed", err.Error())
 			}
 			status := platform.GetLoginItemStatus()
 			atLogin.SetChecked(status == mac.LoginItemEnabled)
 			if status == mac.LoginItemRequiresApproval {
-				go platform.Alert("Launch at Login needs approval",
+				platform.Alert("Launch at Login needs approval",
 					"macOS is holding the request. Open System Settings > General > Login Items and allow amm there.")
 			}
 
@@ -126,9 +136,7 @@ func onReady() {
 
 		case <-about.ClickedCh:
 			slog.Info("requesting about")
-			//Alert blocks until dismissed, so keep it off this loop - otherwise the
-			//whole menu stops responding while it is open.
-			go platform.Alert("Automatic Mouse Mover "+version,
+			platform.Alert("Automatic Mouse Mover "+version,
 				"by Daniel Martin\ngithub.com/clementcopper/automatic-mouse-mover\n\nBased on the original by Prashant Gupta, MIT licensed.")
 		}
 	}
