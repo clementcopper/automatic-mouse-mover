@@ -45,7 +45,8 @@ func Run(onReady, onExit func()) {
 	C.amm_menubar_run()
 }
 
-// SetIcon sets the status bar icon from PNG bytes.
+// SetIcon sets the status bar icon from PNG or SVG bytes. The image is rasterised once,
+// so nothing has to re-render it while the menu bar redraws.
 func SetIcon(data []byte) {
 	if len(data) == 0 {
 		return

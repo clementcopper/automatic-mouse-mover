@@ -21,6 +21,55 @@ static void runOnMain(dispatch_block_t block) {
 	}
 }
 
+// Rasterise once, at the sizes the menu bar actually draws. The artwork may be an SVG,
+// and a vector NSImage handed straight to the status button leaves AppKit re-rendering
+// 2400 path segments every single time the menu bar redraws - which it does whenever
+// what sits behind it changes. Bitmaps are drawn from a cache.
+//
+// Returns nil if the bitmaps cannot be built, so the caller can fall back to the image
+// it already has.
+static NSImage *rasterise(NSImage *image, NSSize size) {
+	NSImage *flat = [[NSImage alloc] initWithSize:size];
+
+	// 1x and 2x. Every Mac that can run this is Retina or drives one, but a 1x rep
+	// keeps a non-Retina external display sharp too.
+	for (int scale = 1; scale <= 2; scale++) {
+		NSBitmapImageRep *rep = [[NSBitmapImageRep alloc]
+			initWithBitmapDataPlanes:NULL
+			              pixelsWide:(NSInteger)(size.width * scale)
+			              pixelsHigh:(NSInteger)(size.height * scale)
+			           bitsPerSample:8
+			         samplesPerPixel:4
+			                hasAlpha:YES
+			                isPlanar:NO
+			          colorSpaceName:NSCalibratedRGBColorSpace
+			             bytesPerRow:0
+			            bitsPerPixel:0];
+		if (rep == nil) {
+			continue;
+		}
+		// The rep's size is in points, its pixel count is not: that is what makes this
+		// the 2x representation rather than a bigger picture.
+		[rep setSize:size];
+
+		[NSGraphicsContext saveGraphicsState];
+		[NSGraphicsContext setCurrentContext:
+			[NSGraphicsContext graphicsContextWithBitmapImageRep:rep]];
+		[image drawInRect:NSMakeRect(0, 0, size.width, size.height)
+		         fromRect:NSZeroRect
+		        operation:NSCompositingOperationSourceOver
+		         fraction:1.0];
+		[NSGraphicsContext restoreGraphicsState];
+
+		[flat addRepresentation:rep];
+	}
+
+	if ([[flat representations] count] == 0) {
+		return nil;
+	}
+	return flat;
+}
+
 @interface AMMDelegate : NSObject <NSApplicationDelegate>
 - (void)onClick:(id)sender;
 @end
@@ -71,11 +120,6 @@ void amm_menubar_set_icon(const void *data, int len) {
 		if (image == nil) {
 			return;
 		}
-		// The artwork is pure black plus an alpha ramp, so AppKit can tint it itself:
-		// black on a light menu bar, white on a dark one, inverted while the menu is
-		// open, and correct when the bar picks up colour from the wallpaper. A
-		// coloured replacement icon would be flattened to a silhouette by this.
-		[image setTemplate:YES];
 
 		// Scale to a fixed height and let the width follow, so a wide mark is not
 		// squashed into a square. The status item was created with
@@ -84,8 +128,23 @@ void amm_menubar_set_icon(const void *data, int len) {
 		NSSize native = [image size];
 		CGFloat height = AMM_ICON_HEIGHT;
 		CGFloat width = (native.height > 0) ? native.width * height / native.height : height;
-		[image setSize:NSMakeSize(width, height)];
-		gStatusItem.button.image = image;
+		NSSize size = NSMakeSize(width, height);
+		[image setSize:size];
+
+		// Flatten before handing it over, and set the template flag on the result: the
+		// flag governs how a control tints the image, drawInRect: copies the artwork as
+		// it is either way.
+		NSImage *icon = rasterise(image, size);
+		if (icon == nil) {
+			icon = image;
+		}
+		// The artwork is pure black plus an alpha ramp, so AppKit can tint it itself:
+		// black on a light menu bar, white on a dark one, inverted while the menu is
+		// open, and correct when the bar picks up colour from the wallpaper. A
+		// coloured replacement icon would be flattened to a silhouette by this.
+		[icon setTemplate:YES];
+
+		gStatusItem.button.image = icon;
 		gStatusItem.button.imagePosition = NSImageOnly;
 	});
 }
