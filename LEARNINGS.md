@@ -185,6 +185,44 @@ Two lessons worth keeping:
   capture backends on it. robotgo is gone; a minimum deployment target could now be set
   if releases need to run on older macOS than the build host.
 
+## The 1.6.0 field report: unresponsive with high CPU
+
+A user on an M4 Pro installed the 1.6.0 release, with Accessibility granted, and found
+`amm` unresponsive and burning CPU; only Activity Monitor got rid of it. No sample, no
+spindump, no log.
+
+- **The obvious suspect did not hold up.** Since 1.6.0 the menu bar artwork is an SVG —
+  one path with 2397 commands — handed to `NSStatusItem` as a vector `NSImage`. Measured
+  on the reporter-free machine instead: the installed 1.6.0 used **19 s of CPU in 4 days
+  7 hours** (macOS 26.3.1, M2, built-in Retina). Whatever AppKit does with that path, it
+  is not re-rasterising it per frame here. The icon is now flattened into 1x/2x bitmaps
+  at load anyway, but it is a precaution, not a fix with evidence behind it. The
+  flattened icon was checked by eye in the menu bar: no visible difference to the vector
+  one, template tinting still correct.
+- **Two real hangs were found by reading, both reachable through the wake callback**,
+  which drives `Start`/`Quit` on its own goroutine while the menu loop does the same:
+  `isRunning` was flipped **inside** the loop goroutine, so a second `Start` that arrived
+  before it was scheduled started a second loop; and `Quit` sent on an unbuffered channel,
+  which blocks for ever once no loop is listening — taking the menu loop that called it
+  down with it. The app then still draws its menu but ignores every click, which is
+  exactly what "reagierte nicht mehr" looks like. `Start`/`Quit`/`CheckNow` are now
+  serialised by a mutex, `Quit` closes the channel and waits on a `done` channel.
+- **`CFUserNotificationDisplayAlert(0.0, …)` never expires.** Called from a goroutine, it
+  parked that thread until someone clicked OK — and as an accessory app AMM never comes
+  forward, so the dialog could sit behind everything unseen. Replaced by `NSAlert` on the
+  main thread via `dispatch_async` plus `activateIgnoringOtherApps:`, one dialog at a
+  time. `Alert` now returns immediately, so no caller needs `go`.
+- **A cursor in a screen corner failed for ever.** macOS clamps the move to the edge, the
+  position does not change, and `moveAndCheck` cannot tell that from a dropped event.
+  Since the sign only flips after a **success**, the mover kept pushing into the same
+  corner and eventually blamed the Accessibility permission. It now tries the opposite
+  direction before reporting failure.
+- **What is still unexplained is the CPU.** Nothing in the Go code spins: the loop ticks
+  every 30 s, the settle poll sleeps 10 ms and is bounded, the log handler does not
+  recurse. If it happens again, the decisive artefacts are `sample amm 10`, a spindump,
+  and `log show --predicate 'subsystem == "com.pg.amm"'` — the app now logs version,
+  architecture and macOS build on startup so a foreign report can be pinned to a build.
+
 ## Testing
 
 - **A package-level var that tests reassign is a data race.** Silencing the logger through
