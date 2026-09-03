@@ -251,3 +251,17 @@ spindump, no log.
   silently matched nothing after gofmt had normalised the comment to `// TestAlertThrottle`,
   so a block of new tests never landed and the run reported "no tests to run" rather than
   failing. Assert that a search pattern matched before writing the file back.
+
+## Rule files and the two-Mac workflow
+
+- **A path-scoped rule loads where the code lives, not where the API it names is wrapped.**
+  The first cut of `.claude/rules/native.md` carried the `CGEventPost` settle poll and the
+  `AXIsProcessTrusted` rule under `internal/mac/**`, but the code they guard is
+  `tryMove`/`reportFailedMove` in `internal/mousemover`. A session simplifying `moveAndCheck`
+  would never have seen them. Caught by `/code-review` on 2026-09-03; they live in
+  `testing.md` now. When writing a rule, `grep` for the symbol it protects and scope to that
+  package.
+- **Two Macs push the same branch.** On 2026-09-03 the Intel side was one commit ahead and
+  five behind (the M2 session had shipped 1.6.1). A plain "sync" cannot resolve that; fetch
+  and rebase before committing. The fix branch is merged and deleted; work continues on
+  `master`.
