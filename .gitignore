@@ -7,3 +7,7 @@ log/
 *.out
 
 .DS_Store
+
+# personal
+.claude/settings.local.json
+.vscode/

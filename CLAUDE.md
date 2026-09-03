@@ -120,4 +120,8 @@ Both grants are pinned to the exact binary: **rebuilding invalidates Accessibili
 
 ## Learnings
 
-Dependency traps and past debugging dead ends are in [LEARNINGS.md](LEARNINGS.md). Read it before touching `go.mod` or the build flags. `Sessions/` holds dated session summaries — what was decided, and what was measured rather than assumed.
+The stories are in [LEARNINGS.md](LEARNINGS.md); the rules distilled from them live in
+`.claude/rules/` and load by path (`internal/mac/**`, `internal/mousemover/**`, build files) when
+you read a matching file. A new finding goes to both places, always: story there, one-liner in the
+matching rule file. The learnings already in this file stay where they are; nothing new is added here. `Sessions/` holds dated session summaries — what was decided, and
+what was measured rather than assumed.
