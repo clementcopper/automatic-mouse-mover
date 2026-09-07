@@ -1,42 +1,33 @@
-MIN_MACOS=-mmacosx-version-min=13.0
-LDFLAGS=-s -w
-
-COVER_PROFILE=cover.out
-COVER_HTML=cover.html
-
-.PHONY: $(COVER_PROFILE) $(COVER_HTML)
+MIN_MACOS=13.0
+BUILD=.build
+APP=./bin/amm.app
 
 all: open
 
-# Universal binary: build each arch on its own, then lipo them together, so one
-# .app runs natively on both Apple Silicon and Intel.
+# Universal binary: build each arch on its own and lipo them together, so one .app
+# runs natively on both Apple Silicon and Intel. `swift build --arch a --arch b` would
+# do it in one go, but that path needs xcbuild from a full Xcode; --triple works with
+# the Command Line Tools alone.
 #
-# -mmacosx-version-min pins the deployment target so a binary built on a newer Mac still
-# runs on Ventura. It used to be forbidden here because robotgo switched its screen
-# capture backend on it; robotgo is gone.
-#
-# -s -w drops the symbol table and DWARF: 36% smaller, and panic traces are unaffected
-# because Go resolves them through its own pclntab.
+# The triple carries the deployment target, so a bundle built on a newer Mac still
+# runs on Ventura. Check with `otool -l bin/amm.app/Contents/MacOS/amm | grep -A3 LC_BUILD_VERSION`.
 build: clean
-	mkdir -p -v ./bin/amm.app/Contents/Resources
-	mkdir -p -v ./bin/amm.app/Contents/MacOS
-	cp ./appInfo/*.plist ./bin/amm.app/Contents/Info.plist
-	cp ./appInfo/*.icns ./bin/amm.app/Contents/Resources/icon.icns
-	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
-		CGO_CFLAGS="-arch arm64 $(MIN_MACOS)" CGO_LDFLAGS="-arch arm64 $(MIN_MACOS)" \
-		go build -ldflags="$(LDFLAGS)" -o ./bin/amm-arm64 cmd/main.go
-	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
-		CGO_CFLAGS="-arch x86_64 $(MIN_MACOS)" CGO_LDFLAGS="-arch x86_64 $(MIN_MACOS)" \
-		go build -ldflags="$(LDFLAGS)" -o ./bin/amm-amd64 cmd/main.go
-	lipo -create -output ./bin/amm.app/Contents/MacOS/amm ./bin/amm-arm64 ./bin/amm-amd64
-	rm ./bin/amm-arm64 ./bin/amm-amd64
-# Ad-hoc sign the bundle. Apple Silicon refuses to run unsigned arm64 code, and while
-# the Go linker signs the arm64 slice itself, the surrounding .app stays unsigned - the
-# bundle is what macOS validates at launch. This is not notarisation: a downloaded copy
-# still needs its quarantine attribute cleared.
-	codesign --force --sign - ./bin/amm.app
-	codesign --verify ./bin/amm.app
-	lipo -archs ./bin/amm.app/Contents/MacOS/amm
+	mkdir -p -v $(APP)/Contents/Resources
+	mkdir -p -v $(APP)/Contents/MacOS
+	cp ./appInfo/Info.plist $(APP)/Contents/Info.plist
+	cp ./appInfo/icon.icns $(APP)/Contents/Resources/icon.icns
+	cp ./assets/icon/tray.* $(APP)/Contents/Resources/
+	swift build -c release --product amm --triple arm64-apple-macosx$(MIN_MACOS)
+	swift build -c release --product amm --triple x86_64-apple-macosx$(MIN_MACOS)
+	lipo -create -output $(APP)/Contents/MacOS/amm \
+		$(BUILD)/arm64-apple-macosx/release/amm \
+		$(BUILD)/x86_64-apple-macosx/release/amm
+# Ad-hoc sign the bundle. Apple Silicon refuses to run unsigned arm64 code, and the
+# bundle is what macOS validates at launch. This is not notarisation: a downloaded
+# copy still needs its quarantine attribute cleared.
+	codesign --force --sign - $(APP)
+	codesign --verify $(APP)
+	lipo -archs $(APP)/Contents/MacOS/amm
 
 open: build
 	open ./bin
@@ -44,26 +35,20 @@ open: build
 clean:
 	rm -rf ./bin
 
+# Runs the app straight from the build tree. No bundle, so there is no tray icon
+# (the button says AMM) and the login item cannot be registered.
 start:
-	go run cmd/main.go
+	swift run amm
 
-test:coverage
+# The engine's tests, a plain executable that exits non-zero on failure. Debug build,
+# which is what lets the tests reach the engine's internals.
+test:
+	swift run amm-tests
 
-coverage: $(COVER_HTML)
-
-$(COVER_HTML): $(COVER_PROFILE)
-	go tool cover -html=$(COVER_PROFILE) -o $(COVER_HTML)
-
-$(COVER_PROFILE):
-	go test -v -failfast -race -coverprofile=$(COVER_PROFILE) ./...
-
-vet:
-	go vet ./...
-
-# Rasterises appInfo/icon.svg into appInfo/icon.icns, and checks that the menu bar
+# Rasterises appInfo/icon.svg into appInfo/icon.icns and checks that the menu bar
 # artwork is pure black plus alpha. Deliberately not a dependency of build: that would
 # demand an SVG on every build and re-rasterise each time.
 icons:
-	go run ./tools/mkicons
+	swift run mkicons
 
-.PHONY: all build open clean start test coverage vet icons
+.PHONY: all build open clean start test icons

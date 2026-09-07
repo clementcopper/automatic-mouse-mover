@@ -1,19 +1,18 @@
 ---
 paths:
-  - "internal/mousemover/**"
+  - "Sources/AMMCore/**"
+  - "Sources/amm-tests/**"
 ---
 
-# Engine and tests (`internal/mousemover`)
+# Engine and tests (`Sources/AMMCore`, `Sources/amm-tests`)
 
-Distilled from `LEARNINGS.md` § Testing and § The 1.6.0 field report. The `platform` seam, the settle poll, the `Start`/`Quit`/`CheckNow` mutex and the closed `quit` channel are described in `CLAUDE.md`.
+Distilled from `LEARNINGS.md` § Testing, § The 1.6.0 field report and § Swift port. The `Platform` seam, the settle poll, the one-thread rule and the test harness are described in `CLAUDE.md`.
 
-- **`CGEventPost` is asynchronous; never read the cursor back immediately.** That reported 20 of 20 moves as failed and drove the cursor one way. Poll the position until it changes, with a deadline (0 ms → 20/20 failed, 20 ms → 0/20).
+- **Posting a mouse event is asynchronous; never read the cursor back immediately.** That reported 20 of 20 moves as failed and drove the cursor one way. Poll the position until it changes, with a deadline (0 ms → 20/20 failed, 20 ms → 0/20).
 - **A probe that needs a sleep tests the mechanism, not the code.** The throwaway test had 50 ms, the shipped check none; give the production path the same wait or the probe is meaningless.
 - **Ask `AXIsProcessTrusted()` on the first failure.** Waiting out ten failures over five minutes and blaming the mouse told the user nothing.
-- **A package-level var that tests reassign is a data race.** `SetupTest` wrote the logger while a previous test's loop goroutine read it; set a per-instance field before `run()` starts.
-- **Tests must not write into unified logging.** With the os_log handler as default, every run planted fake "cannot be moved" errors; verify with `log stream` on the subsystem: 0 records.
-- **A fixed `time.Sleep` waiting for a goroutine is a latent flake.** Under `-race` the loop started after the window; poll for the state with a deadline.
-- **Verify a test by reintroducing the bug.** The 24-hour alert throttle was dead code for years (`lastErrorTime` set three lines above the check); `TestSuite/TestAlertThrottle` was proven by watching it fail on the old condition.
-- **Assert that a scripted replace matched before writing back.** `gofmt` had normalised `//TestAlertThrottle` to `// TestAlertThrottle`, the replace matched nothing and the run said "no tests to run" instead of failing.
-- **Two hangs were found by reading, not by reproduction.** The wake callback drives `Start`/`Quit` from its own goroutine next to the menu loop; a flag set inside the loop goroutine let a second `Start` open a second loop, and a send on an unbuffered `quit` blocked for ever. Every state change that gates a goroutine must happen before the goroutine is spawned, and shutdown must close, never send.
-- **`fakePlatform` has two permission axes on purpose:** `canMove` (does the event land) and `trusted` (`AXIsProcessTrusted`). A stale TCC grant is `trusted && !canMove`; do not collapse them.
+- **Everything runs on the main thread; keep it that way.** Every state bug the Go version had (double start, blocked quit, an unlocked pointer read) came from a second thread that the domain never needed. A `Timer` cannot die, so nothing has to restart it either.
+- **Verify a test by reintroducing the bug.** The 24-hour alert throttle was dead code for years; the Swift suite was proven against three mutants (no retry, no throttle, double start) and caught each.
+- **Tests must not write into unified logging.** Logging is part of `Platform`, so the fake captures it; a real `Logger` in the engine would plant invented "cannot be moved" errors in the system log on every run.
+- **`FakePlatform` has two permission axes on purpose:** `canMove` (does the event land) and `trusted` (`AXIsProcessTrusted`). A stale TCC grant is `trusted && !canMove`; do not collapse them.
+- **The throttle must survive a Stop/Start.** `start()` resets the failure count only; replacing the whole state re-armed the alert on every restart in the Go version.

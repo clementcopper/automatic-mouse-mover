@@ -1,9 +1,8 @@
 ---
 paths:
   - "Makefile"
-  - "go.mod"
-  - "go.sum"
-  - "tools/**"
+  - "Package.swift"
+  - "Sources/mkicons/**"
   - "appInfo/**"
   - "assets/**"
   - ".github/**"
@@ -11,11 +10,13 @@ paths:
 
 # Build, dependencies, icons, release
 
-Distilled from `LEARNINGS.md` § Why there are no dependencies any more and § Build. `-s -w`, `-mmacosx-version-min` and the `NSImage` SVG path are already in `CLAUDE.md`.
+Distilled from `LEARNINGS.md` § Why there are no dependencies any more, § Build and § Swift port. The `--triple` build and the ad-hoc signature are described in `CLAUDE.md`.
 
-- **Before adding a library, check whether the platform already exposes the thing.** One `CGEventSourceSecondsSinceLastEventType` call replaced four polling handlers; `systray` cost 4.2 MB for one logging line.
-- **Measure dependency weight with an A/B build, not `go tool nm`** (symbol sizes summed to 38 MB for a 7.7 MB binary), and count with `go list -deps ./cmd/...`, not go.mod lines.
-- **Ad-hoc sign the bundle, not just the binary** (`codesign --force --sign - ./bin/amm.app` in the Makefile); Apple Silicon refuses unsigned arm64 and macOS validates the `.app`. Still not notarisation: downloads need `xattr -cr` **before** the first launch; macOS 15 dropped right-click → Open, the GUI route is Privacy & Security → Open Anyway. Write install instructions for Finder users, not only the terminal.
-- **Without a deployment target, `minos` is the build host's macOS.** Check with `otool -l <binary> | grep -A3 LC_BUILD_VERSION`.
-- **Cross-compiling cgo works both ways with plain Command Line Tools** (`CGO_ENABLED=1 GOARCH=arm64 CGO_CFLAGS="-arch arm64 $(MIN_MACOS)" CGO_LDFLAGS="-arch arm64 $(MIN_MACOS)"` — never without the deployment target, see the rule above); `make build` does both plus `lipo` and prints `lipo -archs`.
+- **Before adding a library, check whether the platform already exposes the thing.** One `secondsSinceLastEventType` call replaced four polling handlers; `systray` cost 4.2 MB for one logging line. The Swift binary is 197 KB per architecture with nothing added.
+- **Measure dependency weight with an A/B build, not a symbol dump** (symbol sizes summed to 38 MB for a 7.7 MB binary).
+- **`swift build --arch a --arch b` needs xcbuild, which only Xcode has.** With the Command Line Tools build once per `--triple` and `lipo` the results; the products land in `.build/<triple-without-version>/release/`.
+- **The Command Line Tools ship no XCTest and no swift-testing** (`xcrun --find xctest` fails on CLT 15.2). The tests are a plain executable; `swift build` prints an XCTest warning every time, ignore it.
+- **The triple carries the deployment target.** Without `-apple-macosx13.0` `minos` is the build host's macOS. Check with `otool -l <binary> | grep -A3 LC_BUILD_VERSION`.
+- **Ad-hoc sign the bundle, not just the binary** (`codesign --force --sign - ./bin/amm.app`); Apple Silicon refuses unsigned arm64 and macOS validates the `.app`. Still not notarisation: downloads need `xattr -cr` **before** the first launch; macOS 15 dropped right-click → Open, the GUI route is Privacy & Security → Open Anyway. Write install instructions for Finder users, not only the terminal.
 - **`iconutil` wants exactly ten files named `icon_16x16.png` … `icon_512x512@2x.png`,** anything else fails with "Failed to generate ICNS".
+- **The version lives in `Info.plist` only;** the app reads it from the bundle and `release.yml` checks it against the tag.

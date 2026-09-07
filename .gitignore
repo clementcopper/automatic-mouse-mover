@@ -1,10 +1,5 @@
-vendor/
+.build/
 bin/
-log/
-
-# coverage
-*.html
-*.out
 
 .DS_Store
 

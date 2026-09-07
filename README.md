@@ -6,7 +6,7 @@ so Slack, Teams and anything else that watches for idle time keep showing you as
 It only moves the cursor while you are **not** using the machine. Touch the mouse or the
 keyboard and it stays out of your way.
 
-macOS 13 or newer, Apple Silicon and Intel.
+macOS 13 or newer, Apple Silicon and Intel. Written in Swift, no dependencies.
 
 ## How it differs from "prevent sleep" tools
 
@@ -48,8 +48,8 @@ The order matters — once macOS has assessed the app, the dialog is what you ge
 
 ### From source
 
-Needs Go 1.21 or newer and the Xcode Command Line Tools (`xcode-select --install`); the
-full Xcode is not required.
+Needs the Xcode Command Line Tools (`xcode-select --install`), which bring Swift 5.9 or
+newer; the full Xcode is not required.
 
 ```bash
 git clone https://github.com/clementcopper/automatic-mouse-mover.git
@@ -92,8 +92,9 @@ the app, untick **Launch at Login** and tick it again.
 
 ### Changing the icon
 
-Replace `assets/icon/tray.svg` with your own `tray.svg` or `tray.png` and rebuild. Keep
-exactly one `tray.*` file; there is no generator step.
+Replace `assets/icon/tray.svg` with your own `tray.svg` or `tray.png` and rebuild. The
+Makefile copies it into the bundle and the app loads it at launch; there is no generator
+step.
 
 It has to be **pure black plus an alpha channel**. AppKit tints the icon from the alpha
 and throws the colour away, so anything coloured collapses into a silhouette. SVG stays
@@ -120,9 +121,8 @@ the rasterising is done by AppKit itself (`sips` cannot read SVG).
 Every 30 seconds the app asks macOS how long it has been since the last keyboard, mouse
 or tablet event:
 
-```c
-CGEventSourceSecondsSinceLastEventType(kCGEventSourceStateHIDSystemState,
-                                       kCGAnyInputEventType)
+```swift
+CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: kCGAnyInputEventType)
 ```
 
 Past 60 seconds of that, it moves the cursor ten pixels and flips the direction each
@@ -130,8 +130,8 @@ time, so the pointer oscillates instead of drifting into a corner. The check run
 30-second grid, so in practice a move lands every 60 to 90 seconds. The move is a posted
 event rather than a warp:
 
-```c
-CGEventPost(kCGHIDEventTap, CGEventCreateMouseEvent(...))
+```swift
+CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, ...).post(tap: .cghidEventTap)
 ```
 
 which is exactly why the idle timer resets. If the position does not change afterwards,
@@ -143,10 +143,14 @@ is supposed to keep working, which a display-asleep check would have broken.
 
 ## What this fork changes
 
-The app was rewritten to carry **no runtime dependencies at all**. `robotgo`,
-`activity-tracker`, `mac-sleep-notifier` and `systray` are gone, replaced by roughly 250
-lines of CoreGraphics and AppKit. The binary went from 7.7 MB to 3.3 MB per architecture,
-and `go.mod` now asks for nothing but a test library.
+**2.0** is a port to Swift: about 450 lines, one thread, no dependencies, 200 KB per
+architecture. The original is Go; its first rewrite here (1.6) had already dropped every
+library, but 40% of what remained existed only to bridge Go's runtime and AppKit, and that
+is where its last bugs lived. The Go version is kept under the `v1.6.1` tag.
+
+**1.6** rewrote the app to carry **no runtime dependencies at all**. `robotgo`,
+`activity-tracker`, `mac-sleep-notifier` and `systray` were replaced by roughly 250 lines
+of CoreGraphics and AppKit, and the binary went from 7.7 MB to 3.3 MB per architecture.
 
 Four long-standing failures disappeared with the code that caused them:
 

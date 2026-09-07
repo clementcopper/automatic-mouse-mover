@@ -1,0 +1,23 @@
+name: Swift
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Toolchain
+      run: swift --version
+
+    - name: Test
+      run: make test
+
+    # The universal bundle, both slices, ad-hoc signed.
+    - name: Build app bundle
+      run: make build

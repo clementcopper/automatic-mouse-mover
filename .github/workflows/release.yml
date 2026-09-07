@@ -13,24 +13,18 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.25'
-
-    # The version lives in two places plus the tag; a mismatch ships a build that reports
-    # the wrong number, so refuse to build one.
+    # The app reads its version from Info.plist, so that and the tag are the only two
+    # places; a mismatch ships a build that reports the wrong number, so refuse it.
     - name: Check the version matches the tag
       run: |
         version="${GITHUB_REF_NAME#v}"
-        grep -q "const version = \"${version}\"" cmd/main.go
         grep -q "<string>${version}</string>" appInfo/Info.plist
 
     - name: Test
-      run: go test -race ./...
+      run: make test
 
-    # The Makefile pins -mmacosx-version-min=13.0, so an artefact built on macos-15
-    # still runs on Ventura.
+    # The Makefile builds for macosx13.0, so an artefact built on macos-15 still runs
+    # on Ventura.
     - name: Build universal bundle
       run: make build
 

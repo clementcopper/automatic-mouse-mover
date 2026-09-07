@@ -2,6 +2,46 @@
 
 Tool quirks, dependency traps and dead ends for this repo. Linked from [CLAUDE.md](CLAUDE.md).
 
+## Swift port (v2.0, 2026-09-07)
+
+The Go version (v1.6.x) worked — 0 errors in 3 days of log, 17 s CPU in 5.7 days — but
+~620 of its 1595 production lines existed only to marry Go's runtime to AppKit: cgo
+wrappers, headers, `//export` callbacks, `runOnMain`, `LockOSThread`, and in the engine a
+mutex, three channels and a state struct behind an `RWMutex`. Both 1.6.1 hangs and the
+last data race (an unlocked `m.state` pointer read from the wake callback) lived in those
+lines. The app uses nothing from Go — even `slog` was bridged back into `os_log` — so it
+was ported to ~450 lines of Swift that run on one thread. The Go version is tagged `v1.6.1`.
+
+- **Spike before port, with abort criteria written down first.** Build on the Intel with
+  CLT only, universal, `minos 13.0`, signed, launches, logs, and the move path reaches
+  `AXIsProcessTrusted`. All passed within the hour (197 KB binary, `move failed
+  settleMs=419 accessibilityTrusted=false` in the log, exactly the expected refusal
+  without a TCC grant). The cursor moving after the grant is the one hand check left.
+- **`swift build --arch arm64 --arch x86_64` fails on the Command Line Tools** with
+  "xcbuild executable … does not exist". `--triple arm64-apple-macosx13.0` and the x86_64
+  twin work, one build each, then `lipo`; the products sit in
+  `.build/arm64-apple-macosx/release/` (the triple without its version). ~75 s per
+  architecture cold, seconds warm.
+- **No XCTest, no swift-testing in the Command Line Tools** (`xcrun --find xctest`: "not a
+  developer tool"). The tests are a plain executable target with `check(cond, msg)` and
+  an exit code, `@testable import` of the engine in the debug build. 17 tests in 0.1 s
+  against 11.5 s for the Go suite, because the engine is synchronous and nothing sleeps.
+- **`Logger.info` is `OS_LOG_TYPE_INFO`, the level macOS does not persist** — the same
+  trap the Go handler fell into with `os_log`. `Logger.notice` is `DEFAULT` and stays.
+- **The tests were proven against mutants, not just seen green.** Removing the second
+  `tryMove` direction, the 24-hour throttle, and the double-start guard each failed the
+  suite (4, 3 and 2 checks).
+- **The wake restart branch was dead in Swift and is gone.** It existed because a Go loop
+  goroutine could be gone while the flag still said running; a `Timer` cannot die, so a
+  stopped mover is always one the user stopped. `wantRunning` went with it.
+- **Cadence is 60 to 90 s, not 60.** Counted from 748 moves over 3 days of the Go
+  version's log: 138 intervals of 60–70 s, 507 of 70–100 s. The move resets the idle
+  timer a few ms after the tick, so the 60 s tick reads 59.99 and skips. Same in Swift,
+  now documented instead of "fixed".
+
+The sections below are from the Go era. Their macOS findings still hold; the cgo and
+goroutine ones are history.
+
 ## Why there are no dependencies any more
 
 AMM used to pull robotgo, activity-tracker, mac-sleep-notifier and systray — 43 indirect
