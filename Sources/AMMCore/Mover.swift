@@ -61,9 +61,15 @@ public final class Mover {
         isRunning = true
         didNotMoveCount = 0
         platform.log(.info, "starting mouse mover")
-        timer = Timer.scheduledTimer(withTimeInterval: Mover.checkInterval, repeats: true) { [weak self] _ in
-            self?.tick()
-        }
+        let t = Timer(timeInterval: Mover.checkInterval, repeats: true) { [weak self] _ in self?.tick() }
+        // Let macOS batch the wake-up with other timers; the tick may land up to this
+        // much late, which the 30 s grid does not notice.
+        t.tolerance = 5
+        // .common, not the default mode: a default-mode timer does not fire while a
+        // dialog is up (runModal) or the status menu is open (event tracking), so a
+        // user who leaves About open and walks away would get no moves.
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
 
     /// Stops the timer. Safe to call twice.
@@ -75,15 +81,9 @@ public final class Mover {
         platform.log(.info, "stopping mouse mover")
     }
 
-    /// Looks at the idle time now instead of waiting out the next tick. Used after a
-    /// wake. Ignored while stopped, so a wake cannot revive a deliberate Stop.
-    public func checkNow() {
-        guard isRunning else { return }
-        tick()
-    }
-
-    /// One iteration: nudge the cursor unless the user is active. Public so the tests
-    /// can drive it directly; the timer calls it too.
+    /// One iteration: nudge the cursor unless the user is active. The timer calls it,
+    /// the wake handler calls it to skip the wait for the next tick, and the tests
+    /// drive it directly.
     public func tick() {
         let idle = platform.idleSeconds()
         if idle < Mover.idleThreshold {

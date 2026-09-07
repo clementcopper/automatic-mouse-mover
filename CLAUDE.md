@@ -33,11 +33,11 @@ Four targets in `Package.swift`:
 - `Sources/amm-tests/main.swift` — the tests, a plain executable (see below).
 - `Sources/mkicons/main.swift` — the icon tool.
 
-**One thread.** The app has no concurrency: a `Timer` on the main run loop calls `Mover.tick()`, the menu actions and the wake notification (delivered on `.main`) call `start`/`stop`/`checkNow`, and the alert is dispatched onto the main queue. There is no lock, no queue and no atomic, and nothing may be added that calls into `Mover` from another thread. Both hangs of the Go version and its last data race lived in exactly the bridging that this removes.
+**One thread.** The app has no concurrency: a `Timer` on the main run loop calls `Mover.tick()`, the menu actions and the wake notification (delivered on `.main`) call `start`/`stop`/`tick`, and the alert is dispatched onto the main queue. There is no lock, no queue and no atomic, and nothing may be added that calls into `Mover` from another thread. Both hangs of the Go version and its last data race lived in exactly the bridging that this removes.
 
 ### The engine (`Mover.swift`)
 
-`start()` schedules a 30 s `Timer` and resets `didNotMoveCount`; a second call while running does nothing. `stop()` invalidates it. `checkNow()` runs `tick()` at once, but only while running, so a wake cannot revive a deliberate Stop. Each `tick()`:
+`start()` schedules a 30 s `Timer` in the run loop's `.common` modes and resets `didNotMoveCount`; a second call while running does nothing. `stop()` invalidates it. The mode matters: a default-mode timer does not fire while a dialog is up or the status menu is open, so About left open would have silenced the mover (measured: 0 of 3 due fires during `runModal`, 3 of 3 in `.common`). The wake handler calls `tick()` directly after checking `isRunning` itself. Each `tick()`:
 
 - `idleSeconds()` below `idleThreshold` (60 s) → do nothing, the user is at the machine. In practice a move lands every 60 to 90 s: the move itself resets the idle timer a few ms after the tick, so the 60 s tick often reads 59.99.
 - Otherwise `moveAndCheck`, and on success **flip the sign of `movePixel`** so the cursor oscillates instead of drifting off screen. On failure `reportFailedMove`.
@@ -57,7 +57,7 @@ The whole activity detection is one call: `CGEventSource.secondsSinceLastEventTy
 
 Both are throttled to one alert per `alertInterval` (24 h) through `lastAlertTime`, which `start()` deliberately does not reset, so a Stop/Start does not re-arm the alert. `now` is an injectable clock so the test can move past the interval.
 
-There is **no display-sleep guard**. In clamshell mode AMM is supposed to keep working, so a `CGDisplayIsAsleep` check would break exactly the case that matters. A *wake* is watched (`NSWorkspace.didWakeNotification`) only to check immediately (`checkNow`) instead of waiting out the next tick; gated by the `ResumeAfterWake` preference. It never restarts the mover: a stopped mover was stopped on purpose, and a `Timer` cannot die the way a goroutine loop could.
+There is **no display-sleep guard**. In clamshell mode AMM is supposed to keep working, so a `CGDisplayIsAsleep` check would break exactly the case that matters. A *wake* is watched (`NSWorkspace.didWakeNotification`) only to `tick()` immediately instead of waiting out the next tick; gated by the `ResumeAfterWake` preference. It never restarts the mover: a stopped mover was stopped on purpose, and a `Timer` cannot die the way a goroutine loop could.
 
 ### Tests (`amm-tests`)
 
@@ -69,7 +69,7 @@ A plain executable, because the Command Line Tools ship no XCTest and the engine
 
 Menu: About, Start, Stop, Launch at Login, Resume After Wake, Quit. `menu.autoenablesItems = false` is load-bearing: without it AppKit re-decides enabled state at menu-display time and silently overrides `isEnabled`, so Start/Stop stop greying out. A programmatic read-back cannot see this — it only shows up when a human opens the menu.
 
-The only persisted setting is the `ResumeAfterWake` bool in `UserDefaults` (default on). The login item is not stored — macOS owns it and `SMAppService.mainApp.status` reports it back. The version lives in `Info.plist` alone; the app reads `CFBundleShortVersionString` and says `dev` under `swift run`.
+The only persisted setting is the `ResumeAfterWake` bool in `UserDefaults`, default on via `register(defaults:)`. The login item is not stored — macOS owns it and `SMAppService.mainApp.status` reports it back. The version lives in `Info.plist` alone; the app reads `CFBundleShortVersionString` and says `dev` under `swift run`.
 
 `alert` returns at once — the `NSAlert` is dispatched onto the main queue and runs modal on the next pass, one at a time, after `NSApp.activate(ignoringOtherApps:)` because an accessory app never comes forward on its own.
 

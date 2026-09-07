@@ -140,27 +140,18 @@ test("trustedStillWaitsForThreshold") { fake, mover in
     check(fake.alertCount == 0, "no alert before the threshold when trusted")
 }
 
-// The wake path: look at the idle time straight away rather than sitting out a tick.
-test("checkNowMovesWithoutWaitingForTick") { fake, mover in
+// The wake path: the app calls tick() straight away rather than sitting out a tick.
+test("wakeTickMovesWithoutWaitingForTimer") { fake, mover in
     mover.start()
-    mover.checkNow()
-    check(fake.moveCount == 1, "a kick should move without a tick")
-}
-
-// A wake must not revive a mover the user stopped.
-test("checkNowIsIgnoredWhenStopped") { fake, mover in
-    mover.start()
-    mover.stop()
-    mover.checkNow()
-    check(fake.moveCount == 0, "a stopped mover must stay put")
-    check(!mover.isRunning, "should report stopped")
+    mover.tick()
+    check(fake.moveCount == 1, "a wake tick should move without the timer")
 }
 
 // Waking the Mac by touching the keyboard must not move the cursor.
-test("checkNowRespectsActivity") { fake, mover in
+test("wakeTickRespectsActivity") { fake, mover in
     fake.idle = Mover.idleThreshold - 1
     mover.start()
-    mover.checkNow()
+    mover.tick()
     check(fake.moveCount == 0, "should not move while the user is active")
 }
 

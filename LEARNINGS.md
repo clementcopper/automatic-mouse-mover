@@ -42,6 +42,16 @@ ported to ~450 lines of Swift that run on one thread.
   the tick, so the 60 s tick reads 59.99 and skips. Documented instead of "fixed".
 - **A log line does not need its own timestamp.** `moved mouse at=…` printed UTC next to
   the record's local timestamp; dropped.
+- **A `Timer.scheduledTimer` is silent while a dialog is up or the status menu is open.**
+  It lives in the run loop's default mode; `runModal` and menu tracking run other modes.
+  A user leaving About open and walking away would have had no moves until OK — the Go
+  loop on its own thread never had that problem. Measured with a probe: over one second
+  of `runModal`, 0 of 3 due fires in the default mode, 3 of 3 with the timer added via
+  `RunLoop.main.add(_, forMode: .common)`. Found on the second read-through, one day
+  after the port; no test can see it because the tests never spin a run loop.
+- **`imagePosition = .imageOnly` hides the fallback title.** With no `tray.*` in the
+  bundle (`make start`) the status item drew nothing at all. Set the position after
+  deciding whether there is an image.
 
 ## macOS
 

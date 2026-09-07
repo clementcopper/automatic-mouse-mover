@@ -15,4 +15,5 @@ Distilled from `LEARNINGS.md` § macOS, § The 1.6.0 field report and § Swift p
 - **Verify a test by reintroducing the bug.** The 24-hour alert throttle was dead code for years; the Swift suite was proven against three mutants (no retry, no throttle, double start) and caught each.
 - **Tests must not write into unified logging.** Logging is part of `Platform`, so the fake captures it; a real `Logger` in the engine would plant invented "cannot be moved" errors in the system log on every run.
 - **`FakePlatform` has two permission axes on purpose:** `canMove` (does the event land) and `trusted` (`AXIsProcessTrusted`). A stale TCC grant is `trusted && !canMove`; do not collapse them.
+- **Timers go into `.common`, never `scheduledTimer`.** The default mode is silent during `runModal` and menu tracking (measured 0 of 3 fires); the tests spin no run loop and cannot catch it.
 - **The throttle must survive a Stop/Start.** `start()` resets the failure count only; replacing the whole state re-armed the alert on every restart in the Go version.

@@ -36,10 +36,12 @@ final class App: NSObject, NSApplicationDelegate {
         platform.log(.info, "starting version=\(version) arch=\(arch) macos=\(macos)")
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = trayIcon()
-        statusItem.button?.imagePosition = .imageOnly
-        if statusItem.button?.image == nil {
+        if let icon = trayIcon() {
+            statusItem.button?.image = icon
+            statusItem.button?.imagePosition = .imageOnly
+        } else {
             statusItem.button?.title = "AMM"
+            statusItem.button?.imagePosition = .noImage
         }
 
         let menu = NSMenu()
@@ -60,11 +62,14 @@ final class App: NSObject, NSApplicationDelegate {
         mover.start()
         syncStartStop()
 
+        // On by default: resuming after sleep is what one expects, and the whole point
+        // is that starting the mover cannot be forgotten. A registered default is not
+        // persisted, so the user's own choice always wins once made.
+        UserDefaults.standard.register(defaults: [App.prefResumeAfterWake: true])
+
         let status = SMAppService.mainApp.status
         platform.log(.info, "login item status=\(status.rawValue)")
         loginItem.state = status == .enabled ? .on : .off
-        // On by default: resuming after sleep is what one expects, and the whole point
-        // is that starting the mover cannot be forgotten.
         wakeItem.state = resumeAfterWake ? .on : .off
 
         // A sleeping Mac runs no code, so the timer survives on its own. The wake is
@@ -108,9 +113,7 @@ final class App: NSObject, NSApplicationDelegate {
     }
 
     var resumeAfterWake: Bool {
-        let defaults = UserDefaults.standard
-        if defaults.object(forKey: App.prefResumeAfterWake) == nil { return true }
-        return defaults.bool(forKey: App.prefResumeAfterWake)
+        UserDefaults.standard.bool(forKey: App.prefResumeAfterWake)
     }
 
     /// Only checks; it never restarts. A stopped mover was stopped on purpose, and a
@@ -118,7 +121,7 @@ final class App: NSObject, NSApplicationDelegate {
     private func didWake() {
         guard resumeAfterWake, mover.isRunning else { return }
         platform.log(.info, "woke up, checking now")
-        mover.checkNow()
+        mover.tick()
     }
 
     @objc func start() {
