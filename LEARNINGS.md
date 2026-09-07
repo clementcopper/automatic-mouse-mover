@@ -44,6 +44,12 @@ menu. Both turned out to be a handful of lines of CoreGraphics and AppKit, now i
   version of the handler used it and only `Error` records ever showed — the exact blind
   spot the handler was written to remove. `DEFAULT` is persisted and needs no flag.
 - **`os_log` redacts `%s` as `<private>`.** The format has to be `%{public}s`.
+- **`log show` returned nothing three times in a row, and the app was logging fine.** In a
+  non-interactive zsh — the shell behind Claude's Bash tool — `log` is a builtin ("too
+  many arguments"), and the `2>/dev/null` on the query turned that into an empty result
+  indistinguishable from "no records". Seen 2026-09-07 while checking whether the running
+  1.6.0 logged at all; `/usr/bin/log` found 763 records in 3 days. Spell the path out
+  wherever the command is scripted, and never hide stderr on a diagnostic query.
 
 - **`CGEventPost` vs. warping the cursor.** `CGEventCreateMouseEvent` +
   `CGEventPost(kCGHIDEventTap, …)` posts a real HID event and **resets the system idle

@@ -18,6 +18,14 @@ jobs:
       with:
         go-version: '1.25'
 
+    # The version lives in two places plus the tag; a mismatch ships a build that reports
+    # the wrong number, so refuse to build one.
+    - name: Check the version matches the tag
+      run: |
+        version="${GITHUB_REF_NAME#v}"
+        grep -q "const version = \"${version}\"" cmd/main.go
+        grep -q "<string>${version}</string>" appInfo/Info.plist
+
     - name: Test
       run: go test -race ./...
 

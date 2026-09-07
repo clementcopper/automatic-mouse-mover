@@ -92,7 +92,7 @@ the app, untick **Launch at Login** and tick it again.
 
 ### Changing the icon
 
-Replace `assets/icon/tray.png` with your own `tray.png` or `tray.svg` and rebuild. Keep
+Replace `assets/icon/tray.svg` with your own `tray.svg` or `tray.png` and rebuild. Keep
 exactly one `tray.*` file; there is no generator step.
 
 It has to be **pure black plus an alpha channel**. AppKit tints the icon from the alpha
@@ -126,7 +126,8 @@ CGEventSourceSecondsSinceLastEventType(kCGEventSourceStateHIDSystemState,
 ```
 
 Past 60 seconds of that, it moves the cursor ten pixels and flips the direction each
-time, so the pointer oscillates instead of drifting into a corner. The move is a posted
+time, so the pointer oscillates instead of drifting into a corner. The check runs on a
+30-second grid, so in practice a move lands every 60 to 90 seconds. The move is a posted
 event rather than a warp:
 
 ```c

@@ -32,7 +32,7 @@ The build pins `-mmacosx-version-min=13.0` and `-ldflags="-s -w"` (see the `MIN_
 
 **Zero runtime dependencies.** `go.mod` requires only testify, and only for tests. Everything native lives in `internal/mac`.
 
-- `cmd/main.go` — builds the menu and drives `mousemover` through `Start()` / `Quit()` / `CheckNow()`. Menu clicks are handled in a single `select` loop over each item's `ClickedCh`; the loop is the only writer of menu state, so nothing else may touch it. Menu: About, Start, Stop, Launch at Login, Resume After Wake, Quit. The only persisted setting is the `ResumeAfterWake` bool in `NSUserDefaults`; the login item is not stored — macOS owns it and `SMAppService` reports it back. `wantRunning` is an `atomic.Bool` because the wake callback runs on another goroutine: a wake resumes only what the user had running, a deliberate Stop stays stopped.
+- `cmd/main.go` — builds the menu and drives `mousemover` through `Start()` / `Quit()` / `CheckNow()`. Menu clicks are handled in a single `select` loop over each item's `ClickedCh`; the loop and the wake callback are the only writers of menu state, and every AppKit call is serialised by `runOnMain`, so the two never collide. Menu: About, Start, Stop, Launch at Login, Resume After Wake, Quit. The only persisted setting is the `ResumeAfterWake` bool in `NSUserDefaults`; the login item is not stored — macOS owns it and `SMAppService` reports it back. `wantRunning` is an `atomic.Bool` because the wake callback runs on another goroutine: a wake resumes only what the user had running, a deliberate Stop stays stopped.
 - `platform.Alert` returns at once — the dialog is put up on the main thread with `dispatch_async` and outlives the call, and only one is on screen at a time. Do **not** wrap it in `go`: it used to block until dismissed, and the goroutine around it is what made an unseen dialog park a thread for ever.
 - `internal/mac` — all cgo. `mac.go`/`mac.m` wrap CoreGraphics (idle time, cursor, alert); `menubar.go`/`menubar.m` wrap AppKit (`NSStatusItem`); `system.*` cover the login item, preferences and the wake notification; `log.*` route slog into unified logging. Replaced robotgo, activity-tracker, mac-sleep-notifier and systray.
 - `internal/mousemover` — the engine, no cgo. `GetInstance()` returns a package-level singleton.
@@ -68,8 +68,10 @@ All of `state` sits behind an `sync.RWMutex` with getter/setter pairs in `mouseM
 Logging is per-run via `getLogger(m, doWriteToFile, filename)` on `log/slog`; file output is off by default. The default handler is `mac.NewLogHandler`, which writes into **unified logging** — a Finder-launched app has no stderr, so anything else is invisible. Read it back with:
 
 ```bash
-log show --last 10m --predicate 'subsystem == "com.pg.amm"' --style compact
+/usr/bin/log show --last 10m --predicate 'subsystem == "com.pg.amm"' --style compact
 ```
+
+Spell it `/usr/bin/log`: in a non-interactive zsh, which is what the Bash tool runs, `log` is a shell builtin that fails with "too many arguments", and a `2>/dev/null` turns that into an empty result that looks like "no records".
 
 slog `Info` maps to `OS_LOG_TYPE_DEFAULT`, **not** `OS_LOG_TYPE_INFO`: macOS does not retain the latter unless logging is turned up for the subsystem, so info records would silently never appear.
 
