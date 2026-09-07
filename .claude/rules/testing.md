@@ -6,7 +6,7 @@ paths:
 
 # Engine and tests (`Sources/AMMCore`, `Sources/amm-tests`)
 
-Distilled from `LEARNINGS.md` § Testing, § The 1.6.0 field report and § Swift port. The `Platform` seam, the settle poll, the one-thread rule and the test harness are described in `CLAUDE.md`.
+Distilled from `LEARNINGS.md` § macOS, § The 1.6.0 field report and § Swift port. The `Platform` seam, the settle poll, the one-thread rule and the test harness are described in `CLAUDE.md`.
 
 - **Posting a mouse event is asynchronous; never read the cursor back immediately.** That reported 20 of 20 moves as failed and drove the cursor one way. Poll the position until it changes, with a deadline (0 ms → 20/20 failed, 20 ms → 0/20).
 - **A probe that needs a sleep tests the mechanism, not the code.** The throwaway test had 50 ms, the shipped check none; give the production path the same wait or the probe is meaningless.

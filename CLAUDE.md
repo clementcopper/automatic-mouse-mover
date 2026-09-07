@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project policy
 
-This is a fork by Daniel Martin, rewritten in Swift (v2.0) to be nothing but the macOS calls it needs. The upstream `github.com/prashantgupta24/automatic-mouse-mover` is Go and in maintenance mode; this one is not bound by that. Keep the KISS bias: no framework, no package dependency, no abstraction layer "for later". The Go version is preserved under the `v1.6.1` tag.
+This is a fork by Daniel Martin, rewritten in Swift (v2.0) to be nothing but the macOS calls it needs. The upstream `github.com/prashantgupta24/automatic-mouse-mover` is Go and in maintenance mode; this one is not bound by that. Keep the KISS bias: no framework, no package dependency, no abstraction layer "for later". The Go version is preserved on branch `go` and under the `v1.6.1` tag.
 
 macOS-only, 13 or newer. AppKit, CoreGraphics, ServiceManagement and `os` are the whole dependency list.
 

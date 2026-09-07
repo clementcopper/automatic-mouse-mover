@@ -6,7 +6,8 @@ so Slack, Teams and anything else that watches for idle time keep showing you as
 It only moves the cursor while you are **not** using the machine. Touch the mouse or the
 keyboard and it stays out of your way.
 
-macOS 13 or newer, Apple Silicon and Intel. Written in Swift, no dependencies.
+macOS 13 or newer, Apple Silicon and Intel. Written in Swift, no dependencies, about
+300 KB.
 
 ## How it differs from "prevent sleep" tools
 
@@ -48,8 +49,8 @@ The order matters — once macOS has assessed the app, the dialog is what you ge
 
 ### From source
 
-Needs the Xcode Command Line Tools (`xcode-select --install`), which bring Swift 5.9 or
-newer; the full Xcode is not required.
+Needs the Xcode Command Line Tools (`xcode-select --install`), which bring the Swift
+toolchain. The full Xcode is not required.
 
 ```bash
 git clone https://github.com/clementcopper/automatic-mouse-mover.git
@@ -82,7 +83,7 @@ guessing at a cursor that will not move.
 |---|---|
 | **Start / Stop** | Turn the mover on and off. It starts on its own when the app opens. |
 | **Launch at Login** | Registers the app as a login item, so the mover runs from the moment you log in. Off by default. |
-| **Resume After Wake** | Makes sure the mover is going again after the Mac wakes, and checks immediately instead of waiting for the next interval. On by default. Something you stopped on purpose stays stopped. |
+| **Resume After Wake** | Checks the idle time as soon as the Mac wakes instead of waiting for the next interval. On by default. Something you stopped on purpose stays stopped. |
 
 The menu bar icon is a template image, so it turns black or white to match a light or
 dark menu bar on its own.
@@ -113,8 +114,8 @@ make icons
 
 That rasterises the SVG into all ten sizes `iconutil` expects and writes
 `appInfo/icon.icns`. It also checks the menu bar artwork and warns if it carries colour.
-So one SVG per icon is all you need to draw — nothing else has to be installed, because
-the rasterising is done by AppKit itself (`sips` cannot read SVG).
+Nothing else has to be installed, because the rasterising is done by AppKit itself
+(`sips` cannot read SVG).
 
 ## How it works
 
@@ -134,53 +135,38 @@ event rather than a warp:
 CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, ...).post(tap: .cghidEventTap)
 ```
 
-which is exactly why the idle timer resets. If the position does not change afterwards,
-macOS swallowed the event — the app checks whether it actually holds Accessibility
-permission and says so.
+which is exactly why the idle timer resets. Posting is asynchronous, so the app polls the
+cursor position for up to 200 ms to see whether the move landed. If it did not, it tries
+the opposite direction — a cursor parked in a screen corner cannot go further one way —
+and only then checks whether it actually holds Accessibility permission and says so.
 
 There is no sleep detection. A sleeping Mac runs no code, and in clamshell mode the app
 is supposed to keep working, which a display-asleep check would have broken.
 
-## What this fork changes
+## Development
 
-**2.0** is a port to Swift: about 450 lines, one thread, no dependencies, 200 KB per
-architecture. The original is Go; its first rewrite here (1.6) had already dropped every
-library, but 40% of what remained existed only to bridge Go's runtime and AppKit, and that
-is where its last bugs lived. The Go version is kept under the `v1.6.1` tag.
+```bash
+make test      # the engine's tests
+make start     # run from the build tree, no bundle (no icon, no login item)
+make build     # universal ./bin/amm.app
+```
 
-**1.6** rewrote the app to carry **no runtime dependencies at all**. `robotgo`,
-`activity-tracker`, `mac-sleep-notifier` and `systray` were replaced by roughly 250 lines
-of CoreGraphics and AppKit, and the binary went from 7.7 MB to 3.3 MB per architecture.
+Four targets in `Package.swift`: `AMMCore` is the engine behind a `Platform` protocol,
+with no AppKit in it; `amm` is the app; `amm-tests` are the tests; `mkicons` is the icon
+tool. Everything runs on the main thread — a `Timer` drives the engine, and there is no
+queue, lock or atomic anywhere.
 
-Four long-standing failures disappeared with the code that caused them:
+The tests are a plain executable rather than an XCTest bundle, because the Command Line
+Tools ship no XCTest and the engine needs none: it is synchronous, so a test calls
+`tick()` and looks at the result. The suite runs in a tenth of a second.
 
-- **Crashes on lid close and screen lock** ([#63](https://github.com/prashantgupta24/automatic-mouse-mover/issues/63),
-  [#64](https://github.com/prashantgupta24/automatic-mouse-mover/issues/64)) — an
-  uninitialized struct in a dependency, reached through a window-title lookup that no
-  longer happens.
-- **Build failure on the macOS 15 SDK** ([#62](https://github.com/prashantgupta24/automatic-mouse-mover/issues/62)).
-- **Memory leak of roughly 10 MB a day** ([#29](https://github.com/prashantgupta24/automatic-mouse-mover/issues/29)).
-- **Stuck mouse and keyboard input** ([#54](https://github.com/prashantgupta24/automatic-mouse-mover/issues/54),
-  [#22](https://github.com/prashantgupta24/automatic-mouse-mover/issues/22)) — event taps
-  that were never unwound.
-
-Added along the way:
-
-- A universal build that runs natively on Apple Silicon ([#33](https://github.com/prashantgupta24/automatic-mouse-mover/issues/33))
-- A menu bar icon that follows light and dark mode ([#56](https://github.com/prashantgupta24/automatic-mouse-mover/issues/56))
-- Launch at Login and Resume After Wake
-- A permission check that names the real problem instead of blaming the mouse
-
-Fixed in the engine itself: the cursor was judged before the posted event had landed, so
-every move counted as a failure and the pointer drifted into a screen corner; and the
-"grant permission" alert could never fire, because its 24 hour throttle compared against
-a timestamp set three lines above the check.
-
-## Credits and license
+## Origins and license
 
 Written by **Daniel Martin**.
 
 Based on the original [automatic-mouse-mover](https://github.com/prashantgupta24/automatic-mouse-mover)
 by Prashant Gupta, which is where the idea and the first five years of this app come from.
+This fork first rewrote it in Go without any dependencies (1.6, on branch `go` and tag
+`v1.6.1`), then ported it to Swift (2.0).
 
 MIT licensed — see [LICENSE](LICENSE).

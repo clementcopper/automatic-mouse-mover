@@ -10,7 +10,7 @@ paths:
 
 # Build, dependencies, icons, release
 
-Distilled from `LEARNINGS.md` § Why there are no dependencies any more, § Build and § Swift port. The `--triple` build and the ad-hoc signature are described in `CLAUDE.md`.
+Distilled from `LEARNINGS.md` § Build and § Swift port. The `--triple` build and the ad-hoc signature are described in `CLAUDE.md`.
 
 - **Before adding a library, check whether the platform already exposes the thing.** One `secondsSinceLastEventType` call replaced four polling handlers; `systray` cost 4.2 MB for one logging line. The Swift binary is 197 KB per architecture with nothing added.
 - **Measure dependency weight with an A/B build, not a symbol dump** (symbol sizes summed to 38 MB for a 7.7 MB binary).
