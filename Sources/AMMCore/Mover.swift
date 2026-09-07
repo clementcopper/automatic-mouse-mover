@@ -100,7 +100,7 @@ public final class Mover {
         didNotMoveCount = 0
         // Flip the direction so the cursor oscillates instead of drifting off screen.
         movePixel = -movePixel
-        platform.log(.info, "moved mouse at=\(lastMouseMovedTime!)")
+        platform.log(.info, "moved mouse")
     }
 
     /// Nudges the cursor and reports whether it actually moved. A cursor parked in a
